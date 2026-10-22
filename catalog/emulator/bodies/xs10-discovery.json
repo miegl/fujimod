@@ -1,0 +1,148 @@
+{
+  "schema": 1,
+  "id": "xs10-discovery",
+  "soc_id": "xp4",
+  "kernel_unit": "kernel",
+  "loader_handoff": {
+    "address": "0xa00000",
+    "size": "0x5d0",
+    "fill": 0,
+    "words": [
+      {
+        "offset": "0x140",
+        "value": "0x4",
+        "name": "cold boot reason"
+      },
+      {
+        "offset": "0x5cc",
+        "value": "0xc2",
+        "name": "synthetic NOR manufacturer"
+      }
+    ],
+    "basis": "Synthetic cold loader input in a free RAM gap; kernel entry bypasses boot ROM."
+  },
+  "spi_inputs": {
+    "1": {
+      "level": "low",
+      "basis": "Declared catalog input.",
+      "power_registers": {
+        "chip_select": {
+          "port": 12,
+          "pin": 5,
+          "active_high": true
+        },
+        "inputs": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 512,
+          "16": 0,
+          "32": 0,
+          "34": 0,
+          "35": 0,
+          "4": 0,
+          "5": 0,
+          "6": 0
+        },
+        "rtc_ticks_per_second": 54000000,
+        "rtc_basis": "Synthetic stopped RTC, initialized to zero. The counter advances at the declared timebase after guest start; unsupported alarm interrupts refuse.",
+        "ambient_celsius": 25,
+        "basis": "Declared catalog input."
+      }
+    },
+    "4": {
+      "level": "low",
+      "basis": "Declared catalog input."
+    },
+    "5": {
+      "level": "low",
+      "basis": "Declared catalog input."
+    }
+  },
+  "serial_flash": {
+    "contents": "registered-update",
+    "jedec_id": "0xc2201a",
+    "geometry": {
+      "erase_bytes": "0x10000",
+      "page_bytes": "0x100",
+      "erase_ticks": 4096,
+      "page_ticks": 512,
+      "basis": "Declared catalog input."
+    },
+    "basis": "Synthetic 64 MiB NOR with manufacturer 0xc2; identity is also declared in the loader handoff. Not a measured chip identity."
+  },
+  "dram": {
+    "size": "0x20000000",
+    "basis": "Declared catalog input."
+  },
+  "adc_input": {
+    "samples": [
+      2048,
+      0,
+      0,
+      4095,
+      0,
+      0,
+      0,
+      0,
+      2048,
+      0,
+      2048,
+      0
+    ],
+    "ambient_celsius": 25,
+    "thermal_channels": [
+      0,
+      8,
+      10
+    ],
+    "basis": "Declared catalog input."
+  },
+  "gpio_input": {
+    "levels": [
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "basis": "Declared catalog input."
+  },
+  "temperature_input": {
+    "millicelsius": 25000,
+    "basis": "Declared catalog input."
+  },
+  "processed_frame_input": {
+    "frame_period_ticks": 900900,
+    "luma": 128,
+    "basis": "Declared catalog input."
+  },
+  "sensor_input": {
+    "frame_period_ticks": 900900,
+    "frame_active_ticks": 450450,
+    "read_gate": {
+      "register": "0x51",
+      "mask": 8
+    },
+    "statistics_scene": {
+      "name": "functional uniform gray",
+      "luma": 2048,
+      "samples_per_cell": 1024,
+      "black_level": 1024,
+      "signal_shift": 2
+    },
+    "basis": "Declared catalog input."
+  },
+  "$schema": "../../schemas/emulator-document.schema.json"
+}
