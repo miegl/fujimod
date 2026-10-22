@@ -152,7 +152,6 @@ fn board() -> Board {
         .build(
             Options {
                 engine: Engine::Unicorn,
-                unicorn: Some(crate::board::test_support::unicorn_library_path()),
                 translation_cache_bytes: 1 << 20,
             },
             bus,

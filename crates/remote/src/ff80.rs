@@ -183,7 +183,7 @@ impl<S: BorrowMut<Session>> Backend for Ff80Backend<S> {
     }
     fn wait<'a>(&'a mut self, _: &'a ReadSet, deadline: u64) -> LocalFuture<'a, ()> {
         Box::pin(async move {
-            futures_timer::Delay::new(
+            async_io::Timer::after(
                 self.options
                     .poll_interval
                     .min(Duration::from_nanos(deadline.saturating_sub(self.now()))),

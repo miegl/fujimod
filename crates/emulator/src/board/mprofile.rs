@@ -523,10 +523,7 @@ mod tests {
     use super::*;
     #[test]
     fn dwt_cycle_counter_is_guest_clocked_gated_and_observational() {
-        let lib = fujimod_emulator_cpu_unicorn::Library::load(
-            &crate::board::test_support::unicorn_library_path(),
-        )
-        .unwrap();
+        let lib = fujimod_emulator_cpu_unicorn::Library::linked().unwrap();
         let cpu = lib
             .open(fujimod_emulator_cpu::Model::CortexM4, 1024 * 1024)
             .unwrap();

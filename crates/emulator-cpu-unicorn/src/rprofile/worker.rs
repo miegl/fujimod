@@ -12,7 +12,6 @@ use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::marker::PhantomData;
-use std::path::PathBuf;
 use std::ptr::NonNull;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -21,9 +20,8 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 
 /// Inputs needed to construct one native R-profile processor on its owner
-/// thread. The library is opened there; only its path crosses the thread edge.
+/// thread.
 pub struct Config {
-    pub library: PathBuf,
     pub translation_cache_bytes: u32,
     pub options: core::Options,
     pub memory: SharedMemory,
@@ -830,7 +828,7 @@ fn serve(
         wakeup: RefCell::new(None),
         shutdown: Cell::new(false),
     });
-    let library = match Library::load(&config.library) {
+    let library = match Library::linked() {
         Ok(library) => library,
         Err(error) => {
             let _ = ready.send(Err(error));
@@ -1994,10 +1992,7 @@ mod tests {
     use fujimod_emulator_cpu::memory::Backing;
 
     fn worker(memory: SharedMemory) -> CpuWorker {
-        let library = std::env::var_os("CAMERA_UNICORN_LIBRARY")
-            .expect("CAMERA_UNICORN_LIBRARY must select the counted Unicorn library");
         spawn(Config {
-            library: PathBuf::from(library),
             translation_cache_bytes: 1024 * 1024,
             options: core::Options::default(),
             memory,

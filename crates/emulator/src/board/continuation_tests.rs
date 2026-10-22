@@ -1,5 +1,5 @@
 //! Synthetic seqlock publication through a different CPU view of canonical RAM.
-use super::super::{bus, factory, test_support};
+use super::super::{bus, factory};
 use fujimod_emulator_cpu::{Model, Register, arm, timeline::Ratio};
 use fujimod_emulator_cpu_unicorn::rprofile;
 
@@ -76,7 +76,6 @@ fn cached_read_watch_wakes_for_every_uncached_publication_store() {
         .build(
             Options {
                 engine: Engine::Unicorn,
-                unicorn: Some(test_support::unicorn_library_path()),
                 translation_cache_bytes: 1024 * 1024,
             },
             bus::Bus::new(bus::Mode::Strict),

@@ -66,7 +66,6 @@ fn main() -> Result<(), String> {
         };
         let options = || Options {
             engine: Engine::Hypervisor,
-            unicorn: None,
             translation_cache_bytes: 1024 * 1024,
         };
         // Both architectural compare channels must assert their declared PPI at
@@ -806,7 +805,6 @@ fn main() -> Result<(), String> {
         let mut built = graph.build(
             Options {
                 engine: Engine::Hypervisor,
-                unicorn: None,
                 translation_cache_bytes: 1024 * 1024,
             },
             bus,
@@ -992,13 +990,9 @@ fn main() -> Result<(), String> {
             ],
             instructions_per_tick: fujimod_emulator_cpu::timeline::Ratio::new(1, 1)?,
         };
-        let library = std::env::var_os("CAMERA_UNICORN_LIBRARY")
-            .map(std::path::PathBuf::from)
-            .ok_or("CAMERA_UNICORN_LIBRARY must select the counted Unicorn library")?;
         let mut board = graph.build(
             Options {
                 engine: Engine::Hypervisor,
-                unicorn: Some(library),
                 translation_cache_bytes: 1024 * 1024,
             },
             bus,
@@ -1152,13 +1146,9 @@ fn main() -> Result<(), String> {
             peripherals: vec![],
             instructions_per_tick: fujimod_emulator_cpu::timeline::Ratio::new(1, 1)?,
         };
-        let library = std::env::var_os("CAMERA_UNICORN_LIBRARY")
-            .map(std::path::PathBuf::from)
-            .ok_or("CAMERA_UNICORN_LIBRARY must select the counted Unicorn library")?;
         let mut board = graph.build(
             Options {
                 engine: Engine::Hypervisor,
-                unicorn: Some(library),
                 translation_cache_bytes: 1024 * 1024,
             },
             Bus::new(Mode::Strict),

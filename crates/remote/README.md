@@ -81,6 +81,14 @@ size)` pair. The synchronous predicate receives the latest `(address, bytes)`
 pairs; Rust repeats the reads, invokes the predicate and waits on the backend
 read set between checks.
 
+`Camera.wait_until_stable_memory(ranges, stable_spans=..., equals=...,
+stable_comparisons=..., deadline=..., condition=...)` handles the common byte-only
+case without calling Python for every sample. The caller supplies the ranges to
+read, the byte spans that must remain unchanged, and any exact byte values that
+must match. `stable_comparisons` counts consecutive equal comparisons after the
+first matching sample. Rust owns the read and wait loop; it assigns no meaning
+to the supplied addresses or bytes.
+
 `Camera.from_ff80(..., operation_scoped=True)` borrows the existing session for
 each remote operation and returns it before the next application observation.
 Its absolute clock is Python's `time.monotonic_ns()`. This permits existing

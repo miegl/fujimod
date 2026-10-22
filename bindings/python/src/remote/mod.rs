@@ -209,6 +209,34 @@ impl Camera {
             ))
         })))
     }
+    fn wait_until_stable_memory_task(
+        &self,
+        ranges: &str,
+        stable_spans: &str,
+        equals: &str,
+        stable_comparisons: usize,
+        deadline: u64,
+        condition: String,
+    ) -> PyResult<Task> {
+        let ranges: Vec<(u64, usize)> = decode(ranges)?;
+        let stable_spans: Vec<(u64, usize)> = decode(stable_spans)?;
+        let equals: Vec<(u64, Vec<u8>)> = decode(equals)?;
+        let mut lease = Lease::new(&self.slot)?;
+        Ok(Task::new(Box::pin(async move {
+            let r = lease.remote.as_deref_mut().ok_or("Camera lost its owner")?;
+            let reads = remote::operations::wait_until_stable_memory(
+                r,
+                &ranges,
+                &stable_spans,
+                &equals,
+                stable_comparisons,
+                deadline,
+                &condition,
+            )
+            .await?;
+            Ok(Output::MemoryReads(reads))
+        })))
+    }
     fn wait_reads(&self, reads: &str, deadline: u64) -> PyResult<Task> {
         #[derive(serde::Deserialize)]
         #[serde(untagged)]
@@ -380,10 +408,14 @@ impl Camera {
 #[pymethods]
 impl Camera {
     #[staticmethod]
-    fn synthetic_ff80(session: &crate::usb::asynchronous::AsyncSession) -> PyResult<Self> {
+    #[pyo3(signature = (session, poll_seconds=0.001))]
+    fn synthetic_ff80(
+        session: &crate::usb::asynchronous::AsyncSession,
+        poll_seconds: f64,
+    ) -> PyResult<Self> {
         let facts =
             serde_json::to_string(&remote::testing::facts()).map_err(|e| error(e.to_string()))?;
-        Self::from_ff80(session, &facts, 4, 4, 64, 0.001, "lcd".into())
+        Self::from_ff80(session, &facts, 4, 4, 64, poll_seconds, "lcd".into())
     }
     #[staticmethod]
     fn synthetic() -> PyResult<Self> {

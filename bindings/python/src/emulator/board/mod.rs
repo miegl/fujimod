@@ -187,9 +187,9 @@ impl Board {
         Ok(self.board()?.execution_policy().name())
     }
     #[staticmethod]
-    #[pyo3(signature=(library, definition, storage_image=None))]
-    fn from_xp4(library: &str, definition: &str, storage_image: Option<Vec<u8>>) -> PyResult<Self> {
-        let session = super::xp4::Xp4Session::from_definition(library, definition, storage_image)?;
+    #[pyo3(signature=(definition, storage_image=None))]
+    fn from_xp4(definition: &str, storage_image: Option<Vec<u8>>) -> PyResult<Self> {
+        let session = super::xp4::Xp4Session::from_definition(definition, storage_image)?;
         Ok(Self {
             driver: None,
             memory_watch: None,
@@ -386,9 +386,8 @@ impl Board {
     }
 
     #[new]
-    #[pyo3(signature = (library, execution, devices, scene, assets, models, *, execution_mode="strict", continue_refusals=false, engine="unicorn", translation_cache_bytes=16<<20))]
+    #[pyo3(signature = (execution, devices, scene, assets, models, *, execution_mode="strict", continue_refusals=false, engine="unicorn", translation_cache_bytes=16<<20))]
     fn new(
-        library: Option<PathBuf>,
         execution: &str,
         devices: &str,
         scene: &str,
@@ -495,7 +494,6 @@ impl Board {
             .build(
                 factory::Options {
                     engine,
-                    unicorn: library,
                     translation_cache_bytes,
                 },
                 bus,

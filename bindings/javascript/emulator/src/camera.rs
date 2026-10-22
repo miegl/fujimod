@@ -418,7 +418,6 @@ impl Session {
         let mut board = g.execution.build(
             factory::Options {
                 engine: factory::Engine::Unicorn,
-                unicorn: library_path(),
                 translation_cache_bytes: g.translation_cache_bytes,
             },
             bus,

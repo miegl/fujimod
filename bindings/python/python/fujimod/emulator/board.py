@@ -144,7 +144,6 @@ class Board:
                     "Storage names an undeclared asset: " + definition.storage
                 )
             self._native = _native.Board.from_xp4(
-                str(definition.library),
                 json.dumps(dict(definition.options)),
                 storage_image=None
                 if definition.storage is None
@@ -152,7 +151,6 @@ class Board:
             )
         else:
             self._native = _native.Board(
-                definition.library,
                 json.dumps(dict(definition.execution)),
                 json.dumps(dict(definition.devices)),
                 json.dumps(dict(definition.scene)),
@@ -182,7 +180,6 @@ class Board:
         overlays: Sequence[str] = (),
         update: str | PathLike[str],
         boot_rom: str | PathLike[str],
-        unicorn: str | PathLike[str],
         nand: str | PathLike[str] | None = None,
         settings: str | PathLike[str] | None = None,
         clock_seconds_2000: int | None = None,
@@ -218,7 +215,6 @@ class Board:
             raise ValueError("overlays must contain unique catalog identities")
         update = cls._input_path(update, "update")
         boot_rom = cls._input_path(boot_rom, "boot_rom")
-        unicorn = cls._input_path(unicorn, "unicorn")
         nand = None if nand is None else cls._input_path(nand, "nand")
         settings = None if settings is None else cls._input_path(settings, "settings")
         if isinstance(preferred_languages, (str, bytes)) or not isinstance(preferred_languages, Sequence):
@@ -235,7 +231,6 @@ class Board:
             overlays=selected_overlays,
             update=update,
             boot_rom=boot_rom,
-            unicorn=unicorn,
             nand=nand,
             settings=settings,
             clock_seconds_2000=clock_seconds_2000,

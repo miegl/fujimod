@@ -6,8 +6,6 @@ runs the real boot ROM, NAND loader and firmware with strict native device
 models. Unsupported hardware stops execution and remains visible in the JSON
 report.
 
-Build the [Unicorn backend](../emulator-cpu-unicorn/README.md), then:
-
 ```sh
 cargo build --locked --release -p fujimod-emulator --features serde \
   --bin fujimod-emulator
@@ -15,7 +13,6 @@ target/release/fujimod-emulator boot \
   --configuration x70-110-rec \
   --update /path/to/FPUPDATE.DAT \
   --boot-rom /path/to/bootrom.bin \
-  --unicorn "$PWD/target/unicorn-native/libunicorn.2.dylib" \
   --screenshot /path/to/lcd.png
 ```
 
@@ -25,7 +22,7 @@ selected pair must have a supported native runtime. Use `--overlay ID` to apply
 a named variant; repeated overlays are applied in command-line order. Unsupported
 start entries or physical inputs are refused during preparation.
 
-Use the shared library filename produced on your platform. Firmware and ROM
+Firmware and ROM
 size and SHA-256 must match the selected catalog entry. Supplying your own
 16 KiB boot ROM dump is required; the command never fetches one. Binary input
 paths may be absolute or relative to the current directory.
@@ -73,6 +70,19 @@ same `board::factory::Graph`, strict device bus and `session::Session` used by
 the rest of the emulator. `xp5_device_windows` converts a selected SoC
 hardware profile to device windows; callers supply any run-specific device
 options and firmware bytes.
+
+For catalog-backed startup facts, `xp5_startup_from_profile` converts a
+caller-selected firmware profile and resolved SoC into processor reset state,
+GIC initialization, and A-profile timer configuration. It consumes declared
+register and hardware facts only; the caller still selects the profile and
+provides all firmware memory images.
+
+`xp5_apply_run_scene` maps a resolved application scene's frame timing and
+command-image values onto caller-owned XP5 device windows before assembly.
+
+Discovery callers can install explicit AArch64 callee substitutions with
+`Board::install_discovery_callee_stubs`. The API rejects strict boards and
+reports each requested substitution and its hit count in board state.
 
 Initial memory images must fit declared physical RAM and cannot overlap. The
 XP5 open function accepts those bytes without comparing them to a bundled

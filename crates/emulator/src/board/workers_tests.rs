@@ -13,7 +13,6 @@ fn board() -> Board {
         .build(
             factory::Options {
                 engine: factory::Engine::Unicorn,
-                unicorn: Some(test_support::unicorn_library_path()),
                 translation_cache_bytes: 1 << 20,
             },
             Bus::new(bus::Mode::Strict),

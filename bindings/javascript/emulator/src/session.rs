@@ -312,7 +312,6 @@ impl Session {
         let mut board = graph.build(
             factory::Options {
                 engine: factory::Engine::Unicorn,
-                unicorn: library_path(),
                 translation_cache_bytes: config.scenario.translation_cache_bytes,
             },
             Bus::from_graph(Mode::Strict, devices)?,
@@ -390,17 +389,6 @@ impl Session {
             .ok_or("board has no physical controls")?;
         input.enqueue(Duration::from_nanos(at), Key::parse(key)?, pressed)?;
         self.core.board.inputs_changed(*source)
-    }
-}
-
-pub(super) fn library_path() -> Option<std::path::PathBuf> {
-    #[cfg(target_os = "emscripten")]
-    {
-        None
-    }
-    #[cfg(not(target_os = "emscripten"))]
-    {
-        std::env::var_os("CAMERA_UNICORN_LIBRARY").map(Into::into)
     }
 }
 

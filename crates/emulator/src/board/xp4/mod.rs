@@ -21,7 +21,6 @@ use std::{
     cell::{Cell, RefCell, UnsafeCell},
     collections::{BTreeMap, BTreeSet, VecDeque},
     ffi::c_void,
-    path::Path,
     ptr::NonNull,
     rc::Rc,
 };
@@ -806,11 +805,7 @@ impl Session {
     pub fn ram_bytes(&self) -> usize {
         self.inner.ram.len()
     }
-    pub fn new(
-        library: &Path,
-        definition: Definition,
-        storage_image: Option<Vec<u8>>,
-    ) -> Result<Self, String> {
+    pub fn new(definition: Definition, storage_image: Option<Vec<u8>>) -> Result<Self, String> {
         let Definition {
             ram_size,
             cores,
@@ -885,7 +880,7 @@ impl Session {
         {
             return Err("Invalid ARMv7-A peripheral reset inputs".to_owned());
         }
-        let library = Library::load(library)?;
+        let library = Library::linked()?;
         let cpus = (0..cores)
             .map(|_| {
                 library

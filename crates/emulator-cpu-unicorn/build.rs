@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("emscripten") {
         let directory = std::env::var("CAMERA_UNICORN_STATIC_DIR")
@@ -7,7 +9,39 @@ fn main() {
             println!("cargo:rustc-link-lib=static={name}");
             println!("cargo:rerun-if-changed={directory}/lib{name}.a");
         }
+        println!("cargo:rerun-if-env-changed=CAMERA_UNICORN_STATIC_DIR");
+        return;
     }
-    println!("cargo:rerun-if-env-changed=CAMERA_UNICORN_STATIC_DIR");
-    println!("cargo:rerun-if-changed=build.rs");
+    let source = PathBuf::from("vendor/unicorn");
+    if !source.join("CMakeLists.txt").is_file() {
+        panic!("the pinned Unicorn source submodule is not initialized");
+    }
+
+    let mut config = cmake::Config::new(source);
+    config
+        .define("BUILD_SHARED_LIBS", "OFF")
+        .define("UNICORN_LEGACY_STATIC_ARCHIVE", "ON")
+        .define("UNICORN_ARCH", "arm")
+        .define("UNICORN_TCG_INTERPRETER", "OFF")
+        .define("UNICORN_BUILD_TESTS", "OFF")
+        .define("UNICORN_INSTALL", "OFF")
+        .define("UNICORN_FUZZ", "OFF")
+        .build_target("unicorn_archive");
+    let output = config.build();
+
+    println!(
+        "cargo:rustc-link-search=native={}",
+        output.join("build").display()
+    );
+    println!("cargo:rustc-link-lib=static=unicorn");
+    let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if target_env != "msvc" {
+        println!("cargo:rustc-link-lib=m");
+        println!("cargo:rustc-link-lib=pthread");
+    }
+    println!("cargo:rerun-if-changed=vendor/unicorn");
+    println!("cargo:rerun-if-changed=vendor/unicorn/CMakeLists.txt");
+    println!("cargo:rerun-if-changed=vendor/unicorn/cmake");
+    println!("cargo:rerun-if-changed=vendor/unicorn/include");
+    println!("cargo:rerun-if-changed=vendor/unicorn/qemu");
 }

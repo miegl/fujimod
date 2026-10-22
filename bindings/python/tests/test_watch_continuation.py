@@ -1,7 +1,6 @@
 """Real native store stops and checkpoint replay through the Python API."""
 import hashlib
 import json
-import os
 import struct
 
 import pytest
@@ -25,7 +24,7 @@ def board(quantum):
         boot_entries=['rom','loader'], windows=[dict(base=0xfff86000,size=12)], dependencies=[],
         model=dict(kind='block86000',options={}))])
     result = make_board(Definition(execution=graph, devices=plan, assets=(asset,),
-        images=(Image(asset.id,0x10000,core=0),), library=os.environ['CAMERA_UNICORN_LIBRARY'], quantum=quantum),
+        images=(Image(asset.id,0x10000,core=0),), quantum=quantum),
         {asset.id:program})
     result.cpus[0].reg_write({'Arm32':{'R':1}},0x12000)
     return result

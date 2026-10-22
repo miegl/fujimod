@@ -464,17 +464,14 @@ fn configured_start_inputs_change_prepared_devices_or_refuse() {
 /// Boots the same run through `open` and through a serialized preparation, then
 /// compares retired instructions, guest time, the kernel image and the board
 /// fingerprint. Requires the selected files: FUJIMOD_TEST_UPDATE (the update
-/// container), FUJIMOD_TEST_BOOT_ROM (the ROM dump) and CAMERA_UNICORN_LIBRARY.
+/// container) and FUJIMOD_TEST_BOOT_ROM (the ROM dump).
 #[test]
 fn shipped_preparation_opens_the_same_board_as_selected_files() {
-    let (Some(update), Some(boot_rom), Some(unicorn)) = (
+    let (Some(update), Some(boot_rom)) = (
         std::env::var_os("FUJIMOD_TEST_UPDATE"),
         std::env::var_os("FUJIMOD_TEST_BOOT_ROM"),
-        std::env::var_os("CAMERA_UNICORN_LIBRARY"),
     ) else {
-        eprintln!(
-            "skipped: set FUJIMOD_TEST_UPDATE, FUJIMOD_TEST_BOOT_ROM and CAMERA_UNICORN_LIBRARY"
-        );
+        eprintln!("skipped: set FUJIMOD_TEST_UPDATE and FUJIMOD_TEST_BOOT_ROM");
         return;
     };
     const CONFIGURATION: &str = "x70-110-rec";
@@ -505,7 +502,6 @@ fn shipped_preparation_opens_the_same_board_as_selected_files() {
             overlays: vec![],
             update: PathBuf::from(&update),
             boot_rom: PathBuf::from(&boot_rom),
-            unicorn: PathBuf::from(&unicorn),
             nand: None,
             settings: None,
             clock_seconds_2000: None,
@@ -526,7 +522,7 @@ fn shipped_preparation_opens_the_same_board_as_selected_files() {
         clock_seconds_2000: None,
         preferred_languages: vec![],
     };
-    let shipped = snapshot(open_prepared(restored, inputs, Some(PathBuf::from(&unicorn))).unwrap());
+    let shipped = snapshot(open_prepared(restored, inputs).unwrap());
     assert_eq!(shipped, direct);
 }
 
@@ -559,7 +555,7 @@ fn input_bytes_are_refused_before_any_board_when_they_differ_from_the_prepared_i
         clock_seconds_2000: None,
         preferred_languages: vec![],
     };
-    let error = open_prepared(prepared, inputs, None).err().unwrap();
+    let error = open_prepared(prepared, inputs).err().unwrap();
     assert!(error.starts_with("update:"), "{error}");
 }
 

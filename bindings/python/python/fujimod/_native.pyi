@@ -56,7 +56,6 @@ class emulator:
             overlays: Sequence[str] = ...,
             update: str | PathLike[str],
             boot_rom: str | PathLike[str],
-            unicorn: str | PathLike[str],
             nand: str | PathLike[str] | None = None,
             settings: str | PathLike[str] | None = None,
             clock_seconds_2000: int | None = None,
@@ -78,7 +77,6 @@ class emulator:
         def __new__(
             cls,
             /,
-            library: str | PathLike[str] | None,
             execution: str,
             devices: str,
             scene: str,
@@ -165,7 +163,6 @@ class emulator:
         def frame_state(self, /, node: str) -> str: ...
         @staticmethod
         def from_xp4(
-            library: str,
             definition: str,
             storage_image: SupportsGetItem[int, SupportsIndex] | None = None,
         ) -> emulator.Board: ...

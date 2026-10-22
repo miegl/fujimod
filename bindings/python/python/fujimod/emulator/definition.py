@@ -7,7 +7,6 @@ or locate files. Pass declared bytes to ``make_board`` or use
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Literal
 
 
@@ -76,7 +75,6 @@ class Definition:
     assets: tuple[Asset, ...]
     images: tuple[Image, ...] = ()
     scene: Mapping[str, object] = field(default_factory=dict)
-    library: str | Path | None = None
     engine: Literal["unicorn", "hypervisor"] = "unicorn"
     quantum: int = 1000
     translation_cache_bytes: int = 16 << 20
@@ -90,7 +88,6 @@ class Xp4Definition:
     """Resolved facts for an XP4 execution board."""
 
     options: Mapping[str, object]
-    library: str | Path
     assets: tuple[Asset, ...] = ()
     images: tuple[Image, ...] = ()
     storage: str | None = None

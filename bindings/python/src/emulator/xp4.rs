@@ -8,7 +8,7 @@ use pyo3::{
     prelude::*,
     types::{PyBytes, PyDict, PyList},
 };
-use std::{cell::RefCell, collections::BTreeMap, path::Path, rc::Rc};
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 pub(super) struct Xp4Session {
     inner: Session,
@@ -25,14 +25,12 @@ macro_rules! forward {
 
 impl Xp4Session {
     pub(super) fn from_definition(
-        library: &str,
         definition: &str,
         storage_image: Option<Vec<u8>>,
     ) -> PyResult<Self> {
         let definition: Definition = serde_json::from_str(definition)
             .map_err(|error| pyo3::exceptions::PyValueError::new_err(error.to_string()))?;
-        let inner = Session::new(Path::new(library), definition, storage_image)
-            .map_err(crate::emulator::error)?;
+        let inner = Session::new(definition, storage_image).map_err(crate::emulator::error)?;
         let handler = Rc::new(RefCell::new(None::<Py<PyAny>>));
         let observer = handler.clone();
         inner.set_instruction_observer(Some(Rc::new(move |core, address| {

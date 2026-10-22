@@ -43,17 +43,7 @@ dir = "{{config_root}}/apps/web"
 run = "npm run preview -- --mode local-preview --port 5190 --strictPort"
 
 [tasks.rust-test]
-depends = ["unicorn-native-build"]
-run = """
-if [ -z "${CAMERA_UNICORN_LIBRARY:-}" ]; then
-  case "$(uname -s)" in
-    Darwin) export CAMERA_UNICORN_LIBRARY="$PWD/target/unicorn-native/libunicorn.2.dylib" ;;
-    Linux) export CAMERA_UNICORN_LIBRARY="$PWD/target/unicorn-native/libunicorn.so.2" ;;
-    *) echo "Set CAMERA_UNICORN_LIBRARY to a built Unicorn shared library" >&2; exit 1 ;;
-  esac
-fi
-cargo test --workspace --all-features --locked
-"""
+run = "cargo test --workspace --all-features --locked"
 
 [tasks.rust-check]
 run = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
@@ -109,18 +99,7 @@ run = [
 ]
 
 [tasks.python-test]
-depends = ["unicorn-native-build"]
-run = """
-if [ -z "${CAMERA_UNICORN_LIBRARY:-}" ]; then
-  case "$(uname -s)" in
-    Darwin) export CAMERA_UNICORN_LIBRARY="$PWD/target/unicorn-native/libunicorn.2.dylib" ;;
-    Linux) export CAMERA_UNICORN_LIBRARY="$PWD/target/unicorn-native/libunicorn.so.2" ;;
-    *) echo "Set CAMERA_UNICORN_LIBRARY to a built Unicorn shared library" >&2; exit 1 ;;
-  esac
-fi
-mise run python-build-test
-mise run python-pytest
-"""
+run = ["mise run python-build-test", "mise run python-pytest"]
 
 [tasks.python-pytest]
 run = "uv run --locked pytest --cov --cov-report=term-missing --cov-report=xml --cov-report=html --junitxml=target/coverage/python/junit.xml"
@@ -138,37 +117,7 @@ run = "npm run test:node"
 run = "cargo fmt --all -- --check"
 
 [tasks.rust-coverage]
-depends = ["unicorn-native-build"]
-run = """
-if [ -z "${CAMERA_UNICORN_LIBRARY:-}" ]; then
-  case "$(uname -s)" in
-    Darwin) export CAMERA_UNICORN_LIBRARY="$PWD/target/unicorn-native/libunicorn.2.dylib" ;;
-    Linux) export CAMERA_UNICORN_LIBRARY="$PWD/target/unicorn-native/libunicorn.so.2" ;;
-    *) echo "Set CAMERA_UNICORN_LIBRARY to a built Unicorn shared library" >&2; exit 1 ;;
-  esac
-fi
-cargo llvm-cov --workspace --all-features --locked --no-report
-"""
-
-[tasks.unicorn-native-build]
-run = [
-  '''vendor=crates/emulator-cpu-unicorn/vendor/unicorn
-expected=$(git ls-tree HEAD -- "$vendor" | awk '{print $3}')
-actual=$(git -C "$vendor" rev-parse HEAD 2>/dev/null || true)
-if [ "$actual" != "$expected" ]; then
-  if [ -n "$actual" ] && [ -n "$(git -C "$vendor" status --porcelain)" ]; then
-    echo "Unicorn source has local changes; refusing to replace it" >&2
-    exit 1
-  fi
-  git submodule update --init -- "$vendor"
-fi
-if [ -n "$(git -C "$vendor" status --porcelain)" ]; then
-  echo "Unicorn source has local changes; refusing to build it" >&2
-  exit 1
-fi''',
-  "cmake -S crates/emulator-cpu-unicorn/vendor/unicorn -B target/unicorn-native -G Ninja -DUNICORN_ARCH=arm -DUNICORN_TCG_INTERPRETER=OFF -DUNICORN_BUILD_TESTS=OFF -DUNICORN_INSTALL=OFF",
-  "cmake --build target/unicorn-native --target unicorn --parallel 4",
-]
+run = "cargo llvm-cov --workspace --all-features --locked --no-report"
 
 [tasks.web-coverage]
 dir = "{{config_root}}/apps/web"

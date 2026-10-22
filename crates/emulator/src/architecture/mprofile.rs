@@ -1,8 +1,8 @@
 //! ARMv7-M basic exception frames, independent of the execution backend.
 //! NVIC state supplies IPSR because Unicorn exposes the architectural MRS/MSR
 //! view rather than a host setter for the processor's active exception.
-use fujimod_emulator_devices::ip::arm::nvic::Nvic;
 use fujimod_emulator_cpu::{Cpu, Register, arm};
+use fujimod_emulator_devices::ip::arm::nvic::Nvic;
 fn r(n: u8) -> Register {
     Register::Arm32(arm::Register::R(n))
 }
@@ -149,7 +149,7 @@ mod tests {
     use fujimod_emulator_cpu::{Model, Run};
     use fujimod_emulator_cpu_unicorn::Library;
     fn library() -> Library {
-        Library::load(&crate::board::test_support::unicorn_library_path()).unwrap()
+        Library::linked().unwrap()
     }
     #[test]
     fn real_m4_executes_handler_and_restores_aligned_psp_and_nested_msp_frames() {

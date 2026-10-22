@@ -1,7 +1,7 @@
 use super::*;
-use fujimod_emulator_devices::{Cx, Device};
 use fujimod_emulator_cpu::{Model, arm, memory::Backing};
 use fujimod_emulator_cpu_unicorn::rprofile;
+use fujimod_emulator_devices::{Cx, Device};
 use std::sync::{Arc, Mutex};
 
 #[test]
@@ -168,7 +168,6 @@ impl Device for Dma {
 }
 fn board(released: Vec<bool>) -> (Board, Readings) {
     use factory::*;
-    let path = crate::board::test_support::unicorn_library_path();
     let graph = Graph {
         decoders: vec![],
         processors: released
@@ -266,7 +265,6 @@ fn board(released: Vec<bool>) -> (Board, Readings) {
         .build(
             Options {
                 engine: Engine::Unicorn,
-                unicorn: Some(path),
                 translation_cache_bytes: 1024 * 1024,
             },
             bus,

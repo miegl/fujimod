@@ -1,10 +1,7 @@
 //! Minimal, version-pinned Unicorn 2.1.4 public C ABI. No Python binding handles.
 //! Definitions checked against include/unicorn/{unicorn,arm}.h at tag 2.1.4.
 use fujimod_emulator_cpu::BackingObserver;
-#[cfg(not(target_os = "emscripten"))]
-use libloading::Library;
 use std::ffi::{c_char, c_int, c_void};
-use std::path::Path;
 
 pub type Engine = *mut c_void;
 pub type Context = *mut c_void;
@@ -58,17 +55,13 @@ pub struct Extensions {
 }
 
 impl Extensions {
-    /// Explicit library paths and direct native clients must acknowledge the
-    /// same slow path as the Python selector; a path alone is not an opt-in.
-    #[cfg(not(target_os = "emscripten"))]
+    /// Direct native clients must acknowledge the same slow path as the
+    /// Python selector.
     fn require_acceleration(&self) -> Result<(), String> {
         if self.features & FEATURE_PAUSE_ACCOUNTING_LAYOUT == 0 {
             return Err(
                 "The Unicorn accounting ABI predates asynchronous pause support; rebuild the matching Unicorn library".into(),
             );
-        }
-        if std::env::var("CAMERA_FORCE_SLOW_UNICORN").as_deref() == Ok("1") {
-            return Ok(());
         }
         let missing: Vec<_> = [
             (
@@ -105,9 +98,7 @@ impl Extensions {
             return Ok(());
         }
         Err(format!(
-            "The required Unicorn fork acceleration is missing: {}. \
-             To knowingly use slower Unicorn instead, set CAMERA_FORCE_SLOW_UNICORN=1 \
-             (I know the fork would be faster).",
+            "The linked pinned Unicorn build is missing required embedder features: {}.",
             missing.join(", ")
         ))
     }
@@ -131,67 +122,13 @@ macro_rules! api {
         pub struct Api {
             $(pub $field: unsafe extern "C" fn($($args)*) -> $result,)+
             pub extensions: Extensions,
-            #[cfg(not(target_os = "emscripten"))]
-            _library: Library,
         }
-        #[cfg(target_os = "emscripten")]
         unsafe extern "C" { $(fn $field($($args)*) -> $result;)+ }
         impl Api {
-            #[cfg(not(target_os = "emscripten"))]
-            pub unsafe fn load(path: &Path) -> Result<Self, String> {
-                // SAFETY: caller supplies the checked Unicorn library. Its
-                // handle is retained until every engine/context is destroyed.
-                let library = unsafe { Library::new(path) }.map_err(|e| e.to_string())?;
-                $(let $field = *unsafe { library.get::<unsafe extern "C" fn($($args)*) -> $result>(concat!(stringify!($field), "\0").as_bytes()) }
-                    .map_err(|e| e.to_string())?;)+
-                let extensions = Extensions {
-                    write_hook_pc_sync: unsafe {
-                        library.get::<unsafe extern "C" fn(Engine, bool) -> Error>(b"uc_embedder_set_write_hook_pc_sync\0")
-                    }.ok().map(|f| *f),
-                    observe_backings: unsafe {
-                        library.get::<unsafe extern "C" fn(Engine, *const BackingObserver, usize) -> Error>(b"uc_embedder_observe_backings\0")
-                    }.ok().map(|f| *f),
-                    page_hooks: unsafe {
-                        library.get::<unsafe extern "C" fn(Engine, bool) -> Error>(b"uc_embedder_set_page_hooks\0")
-                    }.ok().map(|f| *f),
-                    hook_watched: unsafe {
-                        library.get::<unsafe extern "C" fn(Engine, usize, bool) -> Error>(b"uc_embedder_set_hook_watched\0")
-                    }.ok().map(|f| *f),
-                    watch: unsafe {
-                        library.get::<unsafe extern "C" fn(Engine, u64, u64) -> Error>(b"uc_embedder_watch\0")
-                    }.ok().map(|f| *f),
-                    insn_filter: unsafe {
-                        library.get::<unsafe extern "C" fn(Engine, Option<InsnFilter>, Option<Restart>, *mut c_void) -> Error>(b"uc_embedder_set_insn_filter\0")
-                    }.ok().map(|f| *f),
-                    retry_block: unsafe {
-                        library.get::<unsafe extern "C" fn(Engine, u32) -> Error>(b"uc_embedder_retry_block\0")
-                    }.ok().map(|f| *f),
-                    request_restart: unsafe {
-                        library.get::<unsafe extern "C" fn(Engine) -> Error>(b"uc_embedder_request_restart\0")
-                    }.ok().map(|f| *f),
-                    set_parallel_cpus: unsafe {
-                        library.get::<unsafe extern "C" fn(Engine, bool) -> Error>(b"uc_embedder_set_parallel_cpus\0")
-                    }.ok().map(|f| *f),
-                    accounting: unsafe {
-                        library.get::<unsafe extern "C" fn(Engine) -> *mut Accounting>(b"uc_embedder_accounting\0")
-                    }.ok().map(|f| *f),
-                    exit_counters: unsafe {
-                        library.get::<unsafe extern "C" fn(Engine) -> *const u64>(b"uc_embedder_exit_counters\0")
-                    }.ok().map(|f| *f),
-                    features: unsafe {
-                        library.get::<unsafe extern "C" fn() -> u32>(b"uc_embedder_features\0")
-                    }.ok().map(|f| unsafe { f() }).unwrap_or(0),
-                };
-                extensions.require_acceleration()?;
-                Ok(Self { $($field,)+ extensions, _library: library })
-            }
-            #[cfg(target_os = "emscripten")]
-            pub unsafe fn load(_path: &Path) -> Result<Self, String> {
-                Ok(Self::linked())
-            }
-            #[cfg(target_os = "emscripten")]
-            pub fn linked() -> Self {
-                Self { $($field,)+ extensions: linked::extensions() }
+            pub fn linked() -> Result<Self, String> {
+                let api = Self { $($field,)+ extensions: linked::extensions() };
+                api.extensions.require_acceleration()?;
+                Ok(api)
             }
         }
     }
@@ -228,8 +165,7 @@ api! {
     uc_context_free: unsafe extern "C" fn(_: Context) -> Error,
 }
 
-/// The Emscripten extension owns its pinned static Unicorn; no runtime loader.
-#[cfg(target_os = "emscripten")]
+/// The crate links the pinned Unicorn archive at build time; no runtime loader.
 mod linked {
     use super::*;
     unsafe extern "C" {

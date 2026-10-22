@@ -3,7 +3,7 @@ use fujimod_emulator::boot::{self, Options};
 use fujimod_emulator_cpu::ExecutionPolicy;
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf, process::ExitCode};
 
-const HELP: &str = "Usage: fujimod-emulator boot --configuration ID \\\n  --update UPDATE.DAT --boot-rom ROM.BIN --unicorn LIBRARY \\\n  [--overlay ID] [--nand IMAGE] [--settings MCU.BIN] [--screenshot LCD.PNG] \\\n  [--instruction-limit COUNT] [--execution-policy interactive|exact]\n\n\
+const HELP: &str = "Usage: fujimod-emulator boot --configuration ID \\\n  --update UPDATE.DAT --boot-rom ROM.BIN \\\n  [--overlay ID] [--nand IMAGE] [--settings MCU.BIN] [--screenshot LCD.PNG] \\\n  [--instruction-limit COUNT] [--execution-policy interactive|exact]\n\n\
 Boot configuration: x70-110-rec. The ROM dump is required.\n\
 Without --nand or --settings, persistent settings start blank.\n\
 NAND accepts a committed image or 128 MiB main-area image without OOB/spare.\n\
@@ -35,7 +35,6 @@ fn parse(
             "--language",
             "--update",
             "--boot-rom",
-            "--unicorn",
             "--nand",
             "--settings",
             "--screenshot",
@@ -93,7 +92,6 @@ fn parse(
         overlays,
         update: take("--update")?.into(),
         boot_rom: take("--boot-rom")?.into(),
-        unicorn: take("--unicorn")?.into(),
         nand: None,
         settings: None,
         clock_seconds_2000: None,
@@ -191,8 +189,6 @@ mod tests {
                 "a.dat",
                 "--boot-rom",
                 "rom.bin",
-                "--unicorn",
-                "lib.so",
                 "--instruction-limit",
                 "0"
             ]))
@@ -206,8 +202,6 @@ mod tests {
             "a.dat",
             "--boot-rom",
             "rom.bin",
-            "--unicorn",
-            "lib.so",
         ]))
         .unwrap()
         .unwrap();
@@ -230,8 +224,6 @@ mod tests {
             "a.dat",
             "--boot-rom",
             "rom.bin",
-            "--unicorn",
-            "lib.so",
         ];
         for (value, expected) in [
             ("interactive", ExecutionPolicy::Interactive),
@@ -261,8 +253,6 @@ mod tests {
             "a.dat",
             "--boot-rom",
             "rom.bin",
-            "--unicorn",
-            "lib.so",
         ];
         let mut input = base.to_vec();
         input.extend(["--overlay", "usb", "--overlay", "service"]);

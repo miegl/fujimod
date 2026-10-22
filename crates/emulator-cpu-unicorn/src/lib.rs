@@ -12,19 +12,14 @@ pub mod jit;
 use std::cell::{Cell, Ref, RefCell};
 use std::collections::BTreeMap;
 use std::ffi::CStr;
-use std::path::Path;
 use std::rc::Rc;
 
 pub struct Library {
     api: Rc<ffi::Api>,
 }
 impl Library {
-    pub fn load(path: &Path) -> Result<Self, String> {
-        Self::checked(unsafe { ffi::Api::load(path)? })
-    }
-    #[cfg(target_os = "emscripten")]
     pub fn linked() -> Result<Self, String> {
-        Self::checked(ffi::Api::linked())
+        Self::checked(ffi::Api::linked()?)
     }
     fn checked(api: ffi::Api) -> Result<Self, String> {
         let api = Rc::new(api);

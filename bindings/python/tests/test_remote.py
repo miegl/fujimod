@@ -139,6 +139,25 @@ async def test_memory_wait_repeats_raw_reads_and_predicate_in_rust():
     remote.close()
 
 
+async def test_stable_memory_wait_checks_bytes_and_repeats_in_rust():
+    from test_async import opened
+    from test_stream import E, control as envelope, memory_read
+
+    value = (3).to_bytes(4, "little")
+    exchanges = [exchange for _ in range(3) for exchange in memory_read(768, value)]
+    exchanges.extend([E.control(envelope(0xC4, 2)), E.read(2, b"\x34\x12")])
+    session, script = await opened(exchanges)
+    remote = Camera(_native.remote.Camera.synthetic_ff80(session))
+    observed = await remote.wait_until_stable_memory(
+        [(768, 4)], stable_spans=[(768, 4)], equals=[(768, value)],
+        stable_comparisons=2, deadline=1_000_000_000, condition="stable synthetic bytes",
+    )
+    assert observed == [(768, value)]
+    remote.close()
+    await session.close()
+    assert script.remaining == 0
+
+
 async def test_staged_shutter_and_position_inputs():
     remote = camera()
     await remote.set_input(control('shutter_button'), 'stage', stage='half_press', deadline=10)
@@ -152,15 +171,25 @@ async def test_operation_scoped_camera_returns_usb_between_wait_and_observation(
     from fujimod import usb
     from fujimod.remote import _ScopedNative
     from test_async import opened
-    from test_stream import E, control as envelope
+    from test_stream import E, control as envelope, memory_read
 
     session, script = await opened([
+        E.control(envelope(0xC2, 2)), E.read(2, b'ok'),
+        *memory_read(768, (3).to_bytes(4, 'little')),
+        *memory_read(768, (3).to_bytes(4, 'little')),
+        *memory_read(768, (3).to_bytes(4, 'little')),
         E.control(envelope(0xC2, 2)), E.read(2, b'ok'),
         E.control(envelope(0xC4, 2)), E.read(2, b'ok'),
     ])
     remote = Camera(_ScopedNative(lambda: _native.remote.Camera.synthetic_ff80(session)))
     deadline = remote.now + 1_000_000_000
     await remote.wait({'stores': [], 'devices': []}, deadline=deadline)
+    assert await session.ping() == b'ok'
+    value = (3).to_bytes(4, 'little')
+    assert await remote.wait_until_stable_memory(
+        [(768, 4)], stable_spans=[(768, 4)], equals=[(768, value)],
+        stable_comparisons=2, deadline=deadline, condition='stable synthetic bytes',
+    ) == [(768, value)]
     assert await session.ping() == b'ok'
     await remote.wait({'stores': [], 'devices': []}, deadline=deadline)
     remote.close()

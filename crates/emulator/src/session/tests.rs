@@ -77,7 +77,6 @@ fn card_session() -> Session {
         .build(
             factory::Options {
                 engine: factory::Engine::Unicorn,
-                unicorn: Some(crate::board::test_support::unicorn_library_path()),
                 translation_cache_bytes: 1 << 20,
             },
             bus,

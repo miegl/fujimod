@@ -1,9 +1,9 @@
 use super::*;
-use fujimod_emulator_devices::{Cx, Device, exr2::boot};
 use decoder::{Choice, Decoder};
 use factory::{Engine, Graph, MemoryMap, Options, Peripheral, Processor, Ram};
 use fujimod_emulator_cpu::{Model, arm};
 use fujimod_emulator_cpu_unicorn::rprofile;
+use fujimod_emulator_devices::{Cx, Device, exr2::boot};
 use memory::BusMapping;
 use std::sync::{Arc, Mutex};
 type Readings = Arc<Mutex<Vec<(u64, u32)>>>;
@@ -199,7 +199,6 @@ fn board_with_event(
         .build(
             Options {
                 engine: Engine::Unicorn,
-                unicorn: Some(crate::board::test_support::unicorn_library_path()),
                 translation_cache_bytes: 1024 * 1024,
             },
             bus,

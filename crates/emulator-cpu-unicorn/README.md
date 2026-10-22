@@ -1,30 +1,16 @@
 # Unicorn CPU backend
 
-This backend loads the pinned Unicorn source through the C API. Initialize the
-submodule and build its native ARM library with CMake and Ninja:
+This crate builds the pinned Unicorn source as a static ARM archive during
+Cargo builds and links the archive into each executable or extension. There is
+no runtime Unicorn library selection. Initialize the source submodule once in a
+fresh checkout:
 
 ```sh
 git submodule update --init -- crates/emulator-cpu-unicorn/vendor/unicorn
-cmake -S crates/emulator-cpu-unicorn/vendor/unicorn \
-  -B target/unicorn-native -G Ninja \
-  -DUNICORN_ARCH=arm \
-  -DUNICORN_TCG_INTERPRETER=OFF \
-  -DUNICORN_BUILD_TESTS=OFF \
-  -DUNICORN_INSTALL=OFF
-cmake --build target/unicorn-native --target unicorn --parallel 4
 ```
 
-The Rust tests load the built shared library from `CAMERA_UNICORN_LIBRARY` and
-check the required embedder exports. On macOS, the build above produces
-`target/unicorn-native/libunicorn.2.dylib`:
-
-```sh
-CAMERA_UNICORN_LIBRARY="$PWD/target/unicorn-native/libunicorn.2.dylib" \
-  cargo test --locked -p fujimod-emulator-cpu-unicorn
-```
-
-On other platforms, set `CAMERA_UNICORN_LIBRARY` to the shared library path
-produced by CMake.
+The crate's build script configures CMake and builds the archive automatically.
+The build requires CMake and a native C compiler.
 
 ## Exact loop execution
 
@@ -48,4 +34,3 @@ a loop, read observers, discovery, transaction recording and watched device
 waits disable acceleration. Loop counters and worklist visit stamps are host
 bookkeeping; pending work, deadlines and all modeled device state remain in
 the machine fingerprint.
-

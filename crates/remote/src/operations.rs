@@ -93,6 +93,122 @@ pub async fn wait_until<R: Remote + ?Sized>(
         r.wait(&reads, deadline).await?;
     }
 }
+
+/// Wait for explicit byte ranges to satisfy caller-supplied equality checks
+/// and remain unchanged for `stable_comparisons` consecutive comparisons.
+///
+/// All policy stays with the caller: Rust only reads bytes, compares spans,
+/// and owns the repeat/wait loop. `stable_spans` can be narrower than `ranges`
+/// so adjacent bytes fetched for transport efficiency do not affect stability.
+pub async fn wait_until_stable_memory<R: Remote + ?Sized>(
+    r: &mut R,
+    ranges: &[(u64, usize)],
+    stable_spans: &[(u64, usize)],
+    equals: &[(u64, Vec<u8>)],
+    stable_comparisons: usize,
+    deadline: u64,
+    condition: &str,
+) -> Result<Vec<MemoryRead>> {
+    if ranges.is_empty() {
+        return Err("At least one memory range is required".into());
+    }
+    if ranges.iter().any(|(_, size)| *size == 0) {
+        return Err("Memory ranges must be nonempty".into());
+    }
+    if stable_comparisons == 0 {
+        return Err("stable_comparisons must be nonzero".into());
+    }
+    for &(address, size) in stable_spans {
+        if size == 0
+            || !ranges.iter().any(|&(start, len)| {
+                address >= start
+                    && address
+                        .checked_add(size as u64)
+                        .is_some_and(|end| end <= start.saturating_add(len as u64))
+            })
+        {
+            return Err(format!(
+                "Stable span {address:#x}+{size:#x} is outside requested ranges"
+            ));
+        }
+    }
+    for (address, bytes) in equals {
+        if bytes.is_empty()
+            || !ranges.iter().any(|&(start, len)| {
+                *address >= start
+                    && address
+                        .checked_add(bytes.len() as u64)
+                        .is_some_and(|end| end <= start.saturating_add(len as u64))
+            })
+        {
+            return Err(format!(
+                "Equality span {address:#x}+{:#x} is outside requested ranges",
+                bytes.len()
+            ));
+        }
+    }
+
+    let stable_bytes = stable_spans.iter().try_fold(0usize, |total, (_, size)| {
+        total
+            .checked_add(*size)
+            .ok_or("Stable span size overflows usize")
+    })?;
+    let mut previous = vec![0; stable_bytes];
+    let mut current = Vec::with_capacity(stable_bytes);
+    let mut has_previous = false;
+    let mut stable = 0usize;
+    loop {
+        let mut reads = Vec::with_capacity(ranges.len());
+        for &(address, size) in ranges {
+            reads.push(r.read_memory(address, size).await?);
+        }
+        let span_bytes = |address: u64, size: usize| -> Result<&[u8]> {
+            reads
+                .iter()
+                .find_map(|read| {
+                    let offset = address.checked_sub(read.address)? as usize;
+                    let end = offset.checked_add(size)?;
+                    (end <= read.bytes.len()).then_some(&read.bytes[offset..end])
+                })
+                .ok_or_else(|| format!("Read result did not cover {address:#x}+{size:#x}"))
+        };
+        current.clear();
+        for &(address, size) in stable_spans {
+            current.extend_from_slice(span_bytes(address, size)?);
+        }
+        let mut matches = true;
+        for (address, expected) in equals {
+            if span_bytes(*address, expected.len())? != expected.as_slice() {
+                matches = false;
+                break;
+            }
+        }
+        if matches {
+            stable = if has_previous && previous == current {
+                stable.saturating_add(1)
+            } else {
+                0
+            };
+            if stable >= stable_comparisons {
+                return Ok(reads);
+            }
+        } else {
+            stable = 0;
+        }
+        std::mem::swap(&mut previous, &mut current);
+        has_previous = true;
+        let read_set = reads.iter().fold(ReadSet::default(), |mut set, read| {
+            set.extend(read.reads.clone());
+            set
+        });
+        if r.now() >= deadline {
+            return Err(format!(
+                "Timed out waiting for {condition}; last memory reads: {reads:?}"
+            ));
+        }
+        r.wait(&read_set, deadline).await?;
+    }
+}
 /// The physical control for one navigation step, by the body's canonical IDs.
 ///
 /// MENU/OK opens menus and confirms; bodies without a separate MENU/OK button

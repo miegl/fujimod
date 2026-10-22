@@ -2,7 +2,6 @@
 use super::{Board, InterruptMap, bus::Bus, set};
 use fujimod_emulator_cpu::{Cpu, Model, Register, memory::Backing, timeline::Ratio};
 use fujimod_emulator_cpu_unicorn::Library;
-use std::path::PathBuf;
 use std::ptr::NonNull;
 
 #[derive(Clone, Copy)]
@@ -56,7 +55,6 @@ pub struct Graph {
 }
 pub struct Options {
     pub engine: Engine,
-    pub unicorn: Option<PathBuf>,
     pub translation_cache_bytes: u32,
 }
 pub(super) struct Engines {
@@ -85,16 +83,7 @@ impl Engines {
             .iter()
             .any(|p| matches!(options.engine, Engine::Hypervisor) && p.model == Model::ArmV8A);
         let unicorn = if need_uc {
-            #[cfg(target_os = "emscripten")]
-            let library = Library::linked()?;
-            #[cfg(not(target_os = "emscripten"))]
-            let library = Library::load(
-                options
-                    .unicorn
-                    .as_deref()
-                    .ok_or("Unicorn library must be explicitly selected")?,
-            )?;
-            Some(library)
+            Some(Library::linked()?)
         } else {
             None
         };

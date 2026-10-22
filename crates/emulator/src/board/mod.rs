@@ -24,8 +24,6 @@ mod schedule;
 #[cfg(test)]
 mod schedule_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
-#[cfg(test)]
 mod tests;
 #[cfg(all(test, feature = "serde"))]
 mod workers_tests;
@@ -139,6 +137,7 @@ pub struct Board {
     read_set: RefCell<Option<continuation::ReadSet>>,
     watches: Vec<Box<observe::Watch>>,
     entries: Rc<RefCell<observe::Entries>>,
+    discovery_stub_contexts: Vec<Box<discovery::CalleeStubContext>>,
 }
 impl Board {
     /// Host parallelism used for Interactive device computations. Defaults to
@@ -336,6 +335,7 @@ impl Board {
             read_set: RefCell::new(None),
             watches: vec![],
             entries: Default::default(),
+            discovery_stub_contexts: vec![],
             cpus: Rc::new(cpus.into_iter().map(Rc::from).collect()),
             state,
             bindings: vec![],
@@ -909,7 +909,35 @@ impl Board {
             "timeline":s.timeline.save(),"instructions":s.instructions,"released":s.released,"waiting":s.waiting,"waiting_event":s.waiting_event,"events":s.events,"next_core":self.next_core.get(),"slice_left":self.slice_left.get(),"quantum":self.quantum.get(),"failure":s.error,
             "memory_decoders":s.decoders.state(),"dma_mappings":s.memory.state(),"gic":s.interrupts.as_ref().map(|g|g.gic.save()),"core_interrupt_devices":s.core_interrupts.iter().map(|c|c.as_ref().map(|c|c.device)).collect::<Vec<_>>(),"outputs":s.outputs,"implementation_cluster":s.implementation_cluster,"unmodeled_system":s.unmodeled_system.iter().map(|(&(core,register,pc),&(reads,writes))|json!({"core":core,"register":register,"pc":pc,"reads":reads,"writes":writes})).collect::<Vec<_>>(),"aprofile":s.aprofile.iter().map(|p|p.as_ref().map(|p|p.state(s.timeline.now()).unwrap_or_else(|e|json!({"error":e})))).collect::<Vec<_>>(),"mprofile":s.mprofile.iter().map(|p|p.as_ref().map(|p|p.state(s.timeline.now()))).collect::<Vec<_>>()});
         value["bus"] = bus;
+        value["discovery_callee_stubs"] = self.discovery_callee_stubs();
         value
+    }
+    /// Caller-supplied substitutions installed for explicit discovery runs.
+    pub fn discovery_callee_stubs(&self) -> Value {
+        json!(
+            self.discovery_stub_contexts
+                .iter()
+                .map(|context| context.state())
+                .collect::<Vec<_>>()
+        )
+    }
+    /// Surface callback failures instead of treating a failed substitution as
+    /// a successful discovery run.
+    pub fn check_discovery_callee_stubs(&self) -> Result<(), String> {
+        for context in &self.discovery_stub_contexts {
+            if let Some(error) = context
+                .failure
+                .lock()
+                .map_err(|_| "discovery callee stub status is poisoned")?
+                .as_ref()
+            {
+                return Err(format!(
+                    "discovery callee stub {} at {:#x}: {error}",
+                    context.spec.name, context.spec.address
+                ));
+            }
+        }
+        Ok(())
     }
     pub fn take_frames(&mut self) -> Vec<fujimod_emulator_devices::graphics::scanout::Frame> {
         std::mem::take(&mut self.state.borrow_mut().frames)

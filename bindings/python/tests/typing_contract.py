@@ -35,7 +35,6 @@ if TYPE_CHECKING:
             overlays=("x70-110-rec-usb",),
             update=Path("update.dat"),
             boot_rom=Path("boot.rom"),
-            unicorn=Path("libunicorn.dylib"),
             nand=Path("nand.bin"),
             settings=Path("settings.bin"),
         )

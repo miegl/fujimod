@@ -53,7 +53,7 @@ impl Device for Flag {
     }
 }
 fn board(mmio: bool, declared: bool, peer: bool, irq: bool, mode: LoopMode) -> Board {
-    let library = Library::load(&crate::board::test_support::unicorn_library_path()).unwrap();
+    let library = Library::linked().unwrap();
     let backing = Backing::aligned_zeros(0x4000, 4096).unwrap();
     let memory = rprofile::memory::Memory::default();
     let cpus = (0..if peer { 2 } else { 1 })

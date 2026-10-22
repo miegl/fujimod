@@ -234,6 +234,16 @@ class Camera:
         return await _drive(self._native.wait_until_memory(
             json.dumps(ranges), predicate, deadline, condition))
 
+    async def wait_until_stable_memory(self, ranges: list[tuple[int, int]], *,
+                                       stable_spans: list[tuple[int, int]],
+                                       equals: list[tuple[int, bytes]], stable_comparisons: int,
+                                       deadline: int, condition: str) -> list[tuple[int, bytes]]:
+        """Wait in Rust for caller-selected bytes to match and stabilize."""
+        encoded_equals = [(address, list(expected)) for address, expected in equals]
+        return await _drive(self._native.wait_until_stable_memory_task(
+            json.dumps(ranges), json.dumps(stable_spans), json.dumps(encoded_equals),
+            stable_comparisons, deadline, condition))
+
     def close(self) -> None:
         self._native.close()
 
@@ -279,6 +289,15 @@ class BlockingCamera:
                           condition: str) -> list[tuple[int, bytes]]:
         return self._camera._native.wait_until_memory(
             json.dumps(ranges), predicate, deadline, condition).blocking()
+
+    def wait_until_stable_memory(self, ranges: list[tuple[int, int]], *,
+                                 stable_spans: list[tuple[int, int]],
+                                 equals: list[tuple[int, bytes]], stable_comparisons: int,
+                                 deadline: int, condition: str) -> list[tuple[int, bytes]]:
+        encoded_equals = [(address, list(expected)) for address, expected in equals]
+        return self._camera._native.wait_until_stable_memory_task(
+            json.dumps(ranges), json.dumps(stable_spans), json.dumps(encoded_equals),
+            stable_comparisons, deadline, condition).blocking()
 
 
 class _ScopedTask:
@@ -345,6 +364,20 @@ class _ScopedNative:
 
     def wait_until(self, reference, predicate, deadline):
         return self._call("wait_until", (reference, predicate), deadline)
+
+    def wait_until_stable_memory_task(self, ranges, stable_spans, equals, stable_comparisons,
+                                      deadline, condition):
+        if self.closed:
+            raise RuntimeError("Camera is closed")
+        native = self.connect()
+        try:
+            local_deadline = native.now + max(0, deadline - self.now)
+            task = native.wait_until_stable_memory_task(
+                ranges, stable_spans, equals, stable_comparisons, local_deadline, condition)
+            return _ScopedTask(task, native)
+        except BaseException:
+            native.close()
+            raise
 
     def wait_reads(self, reads, deadline):
         return self._call("wait_reads", (reads,), deadline)

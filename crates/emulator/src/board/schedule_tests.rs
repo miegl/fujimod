@@ -29,8 +29,7 @@ impl Device for ResetLine {
     }
 }
 fn board(counted: bool) -> (Board, Arc<Mutex<Vec<u64>>>) {
-    let path = crate::board::test_support::unicorn_library_path();
-    let library = Library::load(&path).unwrap();
+    let library = Library::linked().unwrap();
     let backing = Backing::aligned_zeros(0x4000, 4096).unwrap();
     let memory = rprofile::memory::Memory::default();
     let cpus = (0..2)
@@ -216,7 +215,6 @@ fn native_software_interrupt_wiring_releases_the_declared_entry_at_the_existing_
             .build(
                 Options {
                     engine: Engine::Unicorn,
-                    unicorn: Some(crate::board::test_support::unicorn_library_path()),
                     translation_cache_bytes: 1024 * 1024,
                 },
                 Bus::from_graph(bus::Mode::Strict, assembly.graph).unwrap(),

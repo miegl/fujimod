@@ -3,7 +3,6 @@
 import gc
 import hashlib
 import importlib
-import os
 import struct
 import weakref
 from types import SimpleNamespace
@@ -146,10 +145,6 @@ def _device_plan() -> dict[str, object]:
 
 
 def test_board_runs_authored_program_and_releases_native_state() -> None:
-    library = os.environ.get("CAMERA_UNICORN_LIBRARY")
-    if library is None:
-        pytest.fail("Set CAMERA_UNICORN_LIBRARY to select an execution library")
-
     program = struct.pack("<II", 0xE3A0002A, 0xEAFFFFFE)
     asset = Asset("program", len(program), hashlib.sha256(program).hexdigest())
     definition = Definition(
@@ -157,7 +152,6 @@ def test_board_runs_authored_program_and_releases_native_state() -> None:
         devices=_device_plan(),
         assets=(asset,),
         images=(Image(asset.id, 0x10000, core=0),),
-        library=library,
         engine="unicorn",
         quantum=1,
     )
@@ -213,14 +207,12 @@ def test_board_from_inputs_validates_configuration_and_paths_first() -> None:
             configuration_id="../configuration",
             update="update.bin",
             boot_rom="boot.rom",
-            unicorn="libunicorn.dylib",
         )
     with pytest.raises(TypeError, match="boot_rom"):
         Board.from_inputs(
             configuration_id="x70-110-rec",
             update="update.bin",
             boot_rom=cast(str, object()),
-            unicorn="libunicorn.dylib",
         )
 
 
@@ -247,7 +239,6 @@ def test_board_from_inputs_forwards_ordered_overlay_ids(monkeypatch: pytest.Monk
         overlays=("x70-110-rec-usb",),
         update="update.dat",
         boot_rom="boot.rom",
-        unicorn="libunicorn.dylib",
     )
     assert calls == [
         {
@@ -255,7 +246,6 @@ def test_board_from_inputs_forwards_ordered_overlay_ids(monkeypatch: pytest.Monk
             "overlays": ("x70-110-rec-usb",),
             "update": "update.dat",
             "boot_rom": "boot.rom",
-            "unicorn": "libunicorn.dylib",
             "nand": None,
             "settings": None,
         }
@@ -270,7 +260,6 @@ def test_board_from_inputs_rejects_duplicate_overlays_before_native() -> None:
             overlays=("x70-110-rec-usb", "x70-110-rec-usb"),
             update="update.dat",
             boot_rom="boot.rom",
-            unicorn="libunicorn.dylib",
         )
 
 

@@ -50,7 +50,7 @@ fn build_rprofile_with_inputs(
     counted: bool,
     inputs: Option<fujimod_emulator_devices::exr2::irq::Inputs>,
 ) -> (Board, Arc<Mutex<Probe>>) {
-    let library = Library::load(&crate::board::test_support::unicorn_library_path()).unwrap();
+    let library = Library::linked().unwrap();
     let raw = library.open(Model::CortexR5F, 1024 * 1024).unwrap();
     let cpu: Box<dyn Cpu> = if counted {
         Box::new(
@@ -191,7 +191,6 @@ fn factory_owns_alias_backing_and_maps_peripherals_to_physical_bus_addresses() {
     use factory::*;
     let options = || Options {
         engine: Engine::Unicorn,
-        unicorn: Some(crate::board::test_support::unicorn_library_path()),
         translation_cache_bytes: 1024 * 1024,
     };
     let graph = || Graph {
@@ -404,7 +403,6 @@ fn pausing_inside_a_quantum_preserves_multicore_interleaving() {
             .build(
                 Options {
                     engine: Engine::Unicorn,
-                    unicorn: Some(crate::board::test_support::unicorn_library_path()),
                     translation_cache_bytes: 1024 * 1024,
                 },
                 Bus::new(bus::Mode::Strict),
@@ -480,7 +478,6 @@ fn mprofile_systick_wakes_wfi_and_executes_a_real_exception_handler() {
             .build(
                 Options {
                     engine: Engine::Unicorn,
-                    unicorn: Some(crate::board::test_support::unicorn_library_path()),
                     translation_cache_bytes: 1024 * 1024,
                 },
                 Bus::new(bus::Mode::Strict),
@@ -657,11 +654,10 @@ fn per_core_irq_board_with_backend(counted: bool) -> (Board, Arc<Mutex<Vec<u64>>
             .collect(),
         instructions_per_tick: Ratio::new(1, 1).unwrap(),
     };
-    let library = crate::board::test_support::unicorn_library_path();
     let mut board = if counted {
         let memory = fujimod_emulator_cpu_unicorn::rprofile::memory::Memory::default();
         let backing = fujimod_emulator_cpu::memory::Backing::aligned_zeros(0x4000, 0x4000).unwrap();
-        let library = Library::load(&library).unwrap();
+        let library = Library::linked().unwrap();
         let cpus = graph
             .processors
             .iter()
@@ -710,7 +706,6 @@ fn per_core_irq_board_with_backend(counted: bool) -> (Board, Arc<Mutex<Vec<u64>>
             .build(
                 factory::Options {
                     engine: factory::Engine::Unicorn,
-                    unicorn: Some(library),
                     translation_cache_bytes: 1024 * 1024,
                 },
                 bus,
