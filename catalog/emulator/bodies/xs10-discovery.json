@@ -41,7 +41,8 @@
             "value": 0
           }
         ],
-        "basis": "Four-byte checksum transport; synthetic status inputs and unset RTC (no valid/control/commit bits asserted). Exact staged clock load and declared inert countdown disable are admitted; alarm enables, retained state, other control operations and post-commit control readback refuse.",
+        "basis": "Four-byte checksum transport; synthetic status inputs and unset RTC. Exact staged clock load, declared inert countdown disable and stored register values are admitted. Retained words initially read zero unless explicitly supplied; no persistence or commit effect is implied. Alarm enables, other control operations and post-commit control readback refuse.",
+        "retained_registers": [42, 43, 44, 45],
         "rtc": {
           "control": 36,
           "read_low": 34,

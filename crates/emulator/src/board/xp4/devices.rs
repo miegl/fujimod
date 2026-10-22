@@ -250,6 +250,7 @@ impl Devices {
         inputs: BTreeMap<u8, u16>,
         disable_writes: Vec<(u8, u16)>,
         rtc: Option<fujimod_emulator_devices::xp4::rtc::StagedConfig>,
+        retained_registers: Vec<u8>,
     ) -> Result<(), String> {
         let pins = self
             .pins
@@ -265,6 +266,7 @@ impl Devices {
             inputs,
             disable_writes,
             rtc,
+            retained_registers,
         )?;
         self.spi_input(base, Box::new(part))
     }

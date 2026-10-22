@@ -1,5 +1,5 @@
 //! Four-byte power-peer frames: seven-bit register, write flag, data and checksum.
-//! Fixed inputs, inert disables and a staged RTC law are explicitly declared.
+//! Fixed inputs, inert disables, stored registers and an RTC law are declared.
 use super::{
     gpio::SharedPins,
     rtc::{StagedClock, StagedConfig},
@@ -20,6 +20,8 @@ struct State {
     inputs: BTreeMap<u8, u16>,
     disable_writes: BTreeSet<(u8, u16)>,
     rtc: Option<StagedClock>,
+    retained_registers: BTreeSet<u8>,
+    stored: BTreeMap<u8, u16>,
     edge: u64,
     phase: u8,
     frame: [u8; 4],
@@ -41,6 +43,7 @@ impl ChecksumPowerSerial {
         inputs: BTreeMap<u8, u16>,
         disable_writes: Vec<(u8, u16)>,
         rtc: Option<StagedConfig>,
+        retained_registers: Vec<u8>,
     ) -> Result<Self, String> {
         if port >= 16 || pin >= 16 || inputs.keys().any(|r| *r > 127) {
             return Err(
@@ -60,6 +63,19 @@ impl ChecksumPowerSerial {
         }) {
             return Err("Staged RTC overlaps fixed inputs or disable admissions".into());
         }
+        let retained: BTreeSet<_> = retained_registers.iter().copied().collect();
+        if retained.len() != retained_registers.len()
+            || retained.iter().any(|register| {
+                *register > 127
+                    || disables.contains(&(*register, 0))
+                    || rtc.as_ref().is_some_and(|r| r.owns(*register))
+            })
+        {
+            return Err(
+                "Stored power registers require unique seven-bit addresses without command overlap"
+                    .into(),
+            );
+        }
         let rtc = rtc.map(StagedClock::new).transpose()?;
         Ok(Self {
             pins,
@@ -72,6 +88,8 @@ impl ChecksumPowerSerial {
                 inputs,
                 disable_writes: disables,
                 rtc,
+                retained_registers: retained,
+                stored: BTreeMap::new(),
                 edge: 0,
                 phase: 0,
                 frame: [0; 4],
@@ -103,6 +121,11 @@ impl Input for ChecksumPowerSerial {
                 s.response = if header & 128 == 0 {
                     if let Some(rtc) = s.rtc.as_ref().filter(|r| r.config.owns(register)) {
                         rtc.read(register, tick)?
+                    } else if s.retained_registers.contains(&register) {
+                        *s.stored
+                            .get(&register)
+                            .or_else(|| s.inputs.get(&register))
+                            .unwrap_or(&0)
                     } else {
                         *s.inputs.get(&register).ok_or_else(|| {
                             format!("Unsupported checksum power SPI read register{register}")
@@ -127,6 +150,11 @@ impl Input for ChecksumPowerSerial {
                     let value = u16::from_be_bytes([s.frame[1], s.frame[2]]);
                     if let Some(rtc) = s.rtc.as_mut().filter(|r| r.config.owns(register)) {
                         rtc.write(register, value, tick)?;
+                        u16::from(s.frame[3])
+                    } else if s.retained_registers.contains(&register) {
+                        // Register storage only; this supplies no commit,
+                        // reset retention or power-domain transition.
+                        s.stored.insert(register, value);
                         u16::from(s.frame[3])
                     } else if s.disable_writes.contains(&(register, value)) {
                         // No countdown/alarm is implemented or armed. A declared
@@ -169,6 +197,11 @@ impl Input for ChecksumPowerSerial {
             || state.idle != s.idle
             || state.inputs != s.inputs
             || state.disable_writes != s.disable_writes
+            || state.retained_registers != s.retained_registers
+            || state
+                .stored
+                .keys()
+                .any(|r| !s.retained_registers.contains(r))
             || state.phase > 3
         {
             return Err("Invalid checksum power SPI checkpoint or physical input".into());
@@ -222,6 +255,7 @@ mod tests {
             [(0, 0), (18, 0x1234), (65, 0xabcd)].into(),
             vec![],
             None,
+            vec![],
         )
         .unwrap();
         let mut gpio = Gpio::new(pins);
@@ -304,6 +338,123 @@ mod tests {
     }
 
     #[test]
+    fn stored_registers_use_declared_initial_values_and_resume_partial_writes() {
+        fn packet(header: u16, value: u16) -> [u16; 4] {
+            let high = value >> 8;
+            let low = value & 255;
+            [header, high, low, !(header + high + low) & 255]
+        }
+        let pins = Pins::new([0; 16]);
+        let mut gpio = Gpio::new(pins.clone());
+        let mut peer = ChecksumPowerSerial::new(
+            pins,
+            12,
+            5,
+            true,
+            false,
+            [(65, 0x1234)].into(),
+            vec![],
+            None,
+            vec![65, 66],
+        )
+        .unwrap();
+        select(&mut gpio, true);
+        assert_eq!(
+            frame(&mut peer, packet(65, 0)).unwrap(),
+            [0, 0x12, 0x34, 0x78]
+        );
+        assert_eq!(frame(&mut peer, packet(66, 0)).unwrap(), [0, 0, 0, 0xbd]);
+        assert!(
+            frame(&mut peer, [0xc2, 0xab, 0xcd, 0])
+                .unwrap_err()
+                .contains("checksum")
+        );
+        assert_eq!(peer.save()["stored"], serde_json::json!({}));
+        select(&mut gpio, false);
+        select(&mut gpio, true);
+        let write = packet(0xc2, 0xabcd);
+        peer.exchange(8, write[0], 0).unwrap();
+        peer.exchange(8, write[1], 0).unwrap();
+        let partial = peer.save();
+        peer.exchange(8, write[2], 0).unwrap();
+        assert_eq!(peer.exchange(8, write[3], 0).unwrap(), write[3]);
+        let complete = peer.save();
+        assert_eq!(complete["stored"], serde_json::json!({"66":0xabcd}));
+        peer.restore(&partial).unwrap();
+        assert_eq!(peer.save()["stored"], serde_json::json!({}));
+        peer.exchange(8, write[2], 0).unwrap();
+        peer.exchange(8, write[3], 0).unwrap();
+        assert_eq!(peer.save(), complete);
+        assert_eq!(
+            frame(&mut peer, packet(66, 0)).unwrap(),
+            [0, 0xab, 0xcd, 0x45]
+        );
+        let saved = peer.save();
+        let mut invalid = saved.clone();
+        invalid["stored"]["67"] = 1.into();
+        assert!(peer.restore(&invalid).is_err());
+        invalid = saved.clone();
+        invalid["retained_registers"] = serde_json::json!([65]);
+        assert!(peer.restore(&invalid).is_err());
+        assert_eq!(peer.save(), saved);
+        assert!(
+            peer.exchange(8, 67, 0)
+                .unwrap_err()
+                .contains("read register67")
+        );
+    }
+
+    #[test]
+    fn stored_register_configuration_refuses_duplicates_and_command_overlap() {
+        for (retained, disables) in [
+            (vec![65, 65], vec![]),
+            (vec![128], vec![]),
+            (vec![65], vec![(65, 0)]),
+        ] {
+            assert!(
+                ChecksumPowerSerial::new(
+                    Pins::new([0; 16]),
+                    12,
+                    5,
+                    true,
+                    false,
+                    BTreeMap::new(),
+                    disables,
+                    None,
+                    retained,
+                )
+                .is_err()
+            );
+        }
+        let rtc = StagedConfig {
+            control: 100,
+            read_low: 101,
+            read_high: 102,
+            stage_low: 103,
+            stage_high: 104,
+            commit_value: 0x202,
+            valid_mask: 2,
+            initial_control: 0,
+            initial_seconds: 0,
+            ticks_per_second: 10,
+        };
+        assert!(
+            ChecksumPowerSerial::new(
+                Pins::new([0; 16]),
+                12,
+                5,
+                true,
+                false,
+                BTreeMap::new(),
+                vec![],
+                Some(rtc),
+                vec![100],
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn declared_disable_acknowledges_only_zero_without_admitting_readback_or_enable() {
         let pins = Pins::new([0; 16]);
         let mut gpio = Gpio::new(pins.clone());
@@ -316,6 +467,7 @@ mod tests {
             [(0, 0)].into(),
             vec![(65, 0)],
             None,
+            vec![],
         )
         .unwrap();
         select(&mut gpio, true);
@@ -364,6 +516,7 @@ mod tests {
                     [(0, 0)].into(),
                     invalid,
                     None,
+                    vec![],
                 )
                 .is_err()
             );

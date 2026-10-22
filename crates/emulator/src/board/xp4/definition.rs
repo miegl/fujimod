@@ -69,6 +69,7 @@ pub struct Definition {
         BTreeMap<u8, u16>,
         Vec<(u8, u16)>,
         Option<fujimod_emulator_devices::xp4::rtc::StagedConfig>,
+        Vec<u8>,
     )>,
     #[serde(default)]
     pub imaging: Option<(
