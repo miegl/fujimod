@@ -35,7 +35,13 @@
           "0": 0,
           "16": 0
         },
-        "basis": "Four-byte checksum transport; synthetic register 0 = 0 and status register 16 = 0 (optional calibration flag clear). All other reads and all writes refuse."
+        "disable_writes": [
+          {
+            "register": 25,
+            "value": 0
+          }
+        ],
+        "basis": "Four-byte checksum transport; synthetic register 0 = 0 and status register 16 = 0 (optional calibration flag clear). The declared countdown disable write is inert while no alarm is modeled; enable writes and undeclared reads/writes refuse."
       }
     },
     "4": {

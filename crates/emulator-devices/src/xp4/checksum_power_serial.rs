@@ -1,9 +1,9 @@
 //! Four-byte power-peer frames: seven-bit register, write flag, data and checksum.
-//! Only explicitly supplied read inputs are modeled; writes have no inferred effects.
+//! Reads and inert disable writes are declared inputs; enable effects refuse.
 use super::{gpio::SharedPins, spi::Input};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -14,6 +14,7 @@ struct State {
     active_high: bool,
     idle: bool,
     inputs: BTreeMap<u8, u16>,
+    disable_writes: BTreeSet<(u8, u16)>,
     edge: u64,
     phase: u8,
     frame: [u8; 4],
@@ -33,11 +34,20 @@ impl ChecksumPowerSerial {
         active_high: bool,
         idle: bool,
         inputs: BTreeMap<u8, u16>,
+        disable_writes: Vec<(u8, u16)>,
     ) -> Result<Self, String> {
         if port >= 16 || pin >= 16 || inputs.keys().any(|r| *r > 127) {
             return Err(
                 "Checksum power SPI needs bounded registers and physical GPIO wiring".into(),
             );
+        }
+        let disables: BTreeSet<_> = disable_writes.iter().copied().collect();
+        if disables.len() != disable_writes.len()
+            || disables
+                .iter()
+                .any(|(register, value)| *register > 127 || *value != 0)
+        {
+            return Err("Checksum power SPI disable admissions require unique seven-bit registers and zero values".into());
         }
         Ok(Self {
             pins,
@@ -48,6 +58,7 @@ impl ChecksumPowerSerial {
                 active_high,
                 idle,
                 inputs,
+                disable_writes: disables,
                 edge: 0,
                 phase: 0,
                 frame: [0; 4],
@@ -97,15 +108,27 @@ impl Input for ChecksumPowerSerial {
                 }
                 if header & 128 != 0 {
                     let value = u16::from_be_bytes([s.frame[1], s.frame[2]]);
-                    return Err(format!(
-                        "Unsupported checksum power SPI write register{register} value0x{value:04x}"
-                    ));
+                    if s.disable_writes.contains(&(register, value)) {
+                        // No countdown/alarm is implemented or armed. A declared
+                        // disable leaves it inert; this does not admit readback
+                        // or any enabling/status transition.
+                        u16::from(s.frame[3])
+                    } else if s.disable_writes.contains(&(register, 0)) {
+                        return Err(format!(
+                            "Checksum power SPI countdown/alarm enable is not modeled: register{register} value0x{value:04x}"
+                        ));
+                    } else {
+                        return Err(format!(
+                            "Unsupported checksum power SPI write register{register} value0x{value:04x}"
+                        ));
+                    }
+                } else {
+                    u16::from(
+                        !register
+                            .wrapping_add((s.response >> 8) as u8)
+                            .wrapping_add(s.response as u8),
+                    )
                 }
-                u16::from(
-                    !register
-                        .wrapping_add((s.response >> 8) as u8)
-                        .wrapping_add(s.response as u8),
-                )
             }
         };
         s.phase = (s.phase + 1) % 4;
@@ -125,6 +148,7 @@ impl Input for ChecksumPowerSerial {
             || state.active_high != s.active_high
             || state.idle != s.idle
             || state.inputs != s.inputs
+            || state.disable_writes != s.disable_writes
             || state.phase > 3
         {
             return Err("Invalid checksum power SPI checkpoint or physical input".into());
@@ -171,6 +195,7 @@ mod tests {
             true,
             false,
             [(0, 0), (18, 0x1234), (65, 0xabcd)].into(),
+            vec![],
         )
         .unwrap();
         let mut gpio = Gpio::new(pins);
@@ -250,5 +275,63 @@ mod tests {
             frame(&mut peer, [18, 0, 0, 237]).unwrap(),
             [0, 0x12, 0x34, 0xa7]
         );
+    }
+
+    #[test]
+    fn declared_disable_acknowledges_only_zero_without_admitting_readback_or_enable() {
+        let pins = Pins::new([0; 16]);
+        let mut gpio = Gpio::new(pins.clone());
+        let mut peer =
+            ChecksumPowerSerial::new(pins, 12, 5, true, false, [(0, 0)].into(), vec![(65, 0)])
+                .unwrap();
+        select(&mut gpio, true);
+        assert_eq!(
+            frame(&mut peer, [0xc1, 0, 0, 0x3e]).unwrap(),
+            [0, 0, 0, 0x3e]
+        );
+        let saved = peer.save();
+        let mut changed = saved.clone();
+        changed["disable_writes"] = serde_json::json!([[64, 0]]);
+        assert!(peer.restore(&changed).is_err());
+        peer.restore(&saved).unwrap();
+        assert!(
+            frame(&mut peer, [0xc1, 0, 1, 0x3d])
+                .unwrap_err()
+                .contains("enable is not modeled")
+        );
+        select(&mut gpio, false);
+        select(&mut gpio, true);
+        assert!(
+            peer.exchange(8, 65, 0)
+                .unwrap_err()
+                .contains("read register65")
+        );
+        select(&mut gpio, false);
+        select(&mut gpio, true);
+        assert_eq!(
+            frame(&mut peer, [0xc2, 0, 0, 0x3d]).unwrap_err(),
+            "Unsupported checksum power SPI write register66 value0x0000"
+        );
+        select(&mut gpio, false);
+        select(&mut gpio, true);
+        assert!(
+            frame(&mut peer, [0xc1, 0, 0, 0])
+                .unwrap_err()
+                .contains("checksum")
+        );
+        for invalid in [vec![(65, 1)], vec![(65, 0), (65, 0)], vec![(128, 0)]] {
+            assert!(
+                ChecksumPowerSerial::new(
+                    Pins::new([0; 16]),
+                    12,
+                    5,
+                    true,
+                    false,
+                    [(0, 0)].into(),
+                    invalid
+                )
+                .is_err()
+            );
+        }
     }
 }

@@ -246,6 +246,7 @@ impl Devices {
         pin: usize,
         active_high: bool,
         inputs: BTreeMap<u8, u16>,
+        disable_writes: Vec<(u8, u16)>,
     ) -> Result<(), String> {
         let pins = self
             .pins
@@ -259,6 +260,7 @@ impl Devices {
             active_high,
             idle,
             inputs,
+            disable_writes,
         )?;
         self.spi_input(base, Box::new(part))
     }

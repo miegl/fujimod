@@ -961,10 +961,10 @@ impl Session {
                 .get_or_insert_with(devices::Devices::empty)
                 .power_spi(base, idle, port, pin, high, inputs, rtc_ticks)?;
         }
-        if let Some((base, idle, port, pin, high, inputs)) = checksum_power_spi {
+        if let Some((base, idle, port, pin, high, inputs, disable_writes)) = checksum_power_spi {
             devices
                 .get_or_insert_with(devices::Devices::empty)
-                .checksum_power_spi(base, idle, port, pin, high, inputs)?;
+                .checksum_power_spi(base, idle, port, pin, high, inputs, disable_writes)?;
         }
         for (base, miso) in spi_inputs {
             devices
