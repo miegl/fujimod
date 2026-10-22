@@ -33,6 +33,7 @@
         },
         "inputs": {
           "0": 0,
+          "2": 0,
           "14": 17,
           "16": 0
         },
@@ -42,7 +43,7 @@
             "value": 0
           }
         ],
-        "basis": "Four-byte checksum transport; synthetic status inputs and unset RTC. Register 14 reads 0x0011, a physical service-mode sample stable over five seconds with the headphone field clear; writes to it refuse. Stored words initially read zero. Clock loads preserve retained validity. Control reads retain the load strobe through the declared set window, refuse the unresolved interval, then clear it. After fresh writes to every retained word, the declared validity update latches without a clock reload or persistence effect. Independent control operations and alarm enables refuse.",
+        "basis": "Four-byte checksum transport; synthetic status inputs and unset RTC. Registers 2 and 14 read 0x0000 and 0x0011, physical service-mode samples stable over five seconds (register 14 with the headphone field clear); writes to them refuse. Stored words initially read zero. Clock loads preserve retained validity. Control reads retain the load strobe through the declared set window, refuse the unresolved interval, then clear it. After fresh writes to every retained word, the declared validity update latches without a clock reload or persistence effect. Independent control operations and alarm enables refuse.",
         "retained_registers": [42, 43, 44, 45],
         "rtc": {
           "control": 36,
