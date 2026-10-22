@@ -1,65 +1,12 @@
 //! Bounded physical power-controller SPI register protocol, not a CPU harness.
 //! 10a09fc clocks a 24-bit frame; 10a1d40 supplies the six-bit register address.
-use super::{gpio::SharedPins, spi::Input};
+use super::{
+    gpio::SharedPins,
+    rtc::{Counter, DirectRegisters},
+    spi::Input,
+};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Rtc {
-    seconds: u32,
-    anchor: u64,
-    running: bool,
-    ticks_per_second: u64,
-}
-impl Rtc {
-    fn counter(&self, tick: u64) -> Result<u32, String> {
-        let elapsed = tick
-            .checked_sub(self.anchor)
-            .ok_or("Power RTC clock moved backwards")?;
-        Ok(self.seconds.wrapping_add(if self.running {
-            (elapsed / self.ticks_per_second) as u32
-        } else {
-            0
-        }))
-    }
-    fn read(&self, register: u8, tick: u64) -> Result<u16, String> {
-        Ok(match register {
-            32 => {
-                if self.running {
-                    0x8000
-                } else {
-                    0
-                }
-            }
-            34 => self.counter(tick)? as u16,
-            35 => (self.counter(tick)? >> 16) as u16,
-            _ => unreachable!(),
-        })
-    }
-    fn write(&mut self, register: u8, value: u16, tick: u64) -> Result<(), String> {
-        if register == 32 {
-            if !matches!(value, 0 | 0x8000) {
-                return Err("Unsupported power RTC control bits".into());
-            }
-            if self.running != (value != 0) {
-                self.seconds = self.counter(tick)?;
-                self.anchor = tick;
-                self.running = value != 0;
-            }
-        } else {
-            if self.running {
-                return Err("Power RTC counter write while running".into());
-            }
-            self.seconds = if register == 34 {
-                (self.seconds & 0xffff0000) | u32::from(value)
-            } else {
-                (self.seconds & 0xffff) | u32::from(value) << 16
-            };
-            self.anchor = tick;
-        }
-        Ok(())
-    }
-}
 pub struct PowerSerial {
     pins: SharedPins,
     port: usize,
@@ -73,7 +20,8 @@ pub struct PowerSerial {
     header: u8,
     high: u8,
     response: u16,
-    rtc: Rtc,
+    rtc: Counter,
+    rtc_registers: DirectRegisters,
 }
 impl PowerSerial {
     pub fn new(
@@ -84,6 +32,7 @@ impl PowerSerial {
         idle: bool,
         inputs: BTreeMap<u8, u16>,
         rtc_ticks_per_second: u64,
+        rtc_registers: DirectRegisters,
     ) -> Result<Self, String> {
         if inputs.iter().any(|(k, v)| (3..=6).contains(k) && *v > 1023)
             || port >= 16
@@ -101,12 +50,12 @@ impl PowerSerial {
                 "Power SPI needs explicit ADC/status inputs and a physical chip select".into(),
             );
         }
-        let rtc = Rtc {
-            seconds: u32::from(inputs[&34]) | u32::from(inputs[&35]) << 16,
-            anchor: 0,
-            running: inputs[&32] != 0,
-            ticks_per_second: rtc_ticks_per_second,
-        };
+        rtc_registers.validate()?;
+        let rtc = Counter::new(
+            u32::from(inputs[&34]) | u32::from(inputs[&35]) << 16,
+            inputs[&32] != 0,
+            rtc_ticks_per_second,
+        )?;
         Ok(Self {
             pins,
             port,
@@ -121,6 +70,7 @@ impl PowerSerial {
             high: 0,
             response: 0,
             rtc,
+            rtc_registers,
         })
     }
     fn writable(register: u8) -> bool {
@@ -150,7 +100,7 @@ impl Input for PowerSerial {
                 self.header = tx;
                 let register = tx >> 2;
                 let bank = tx & 2 != 0;
-                if bank && matches!(register, 32 | 34 | 35) {
+                if bank && self.rtc_registers.owns(register) {
                     return Err("Power RTC second bank is not modeled".into());
                 }
                 if tx & 1 != 0 {
@@ -158,8 +108,8 @@ impl Input for PowerSerial {
                         return Err(format!("Unsupported power SPI write register{register}"));
                     }
                     self.response = 0;
-                } else if matches!(register, 32 | 34 | 35) {
-                    self.response = self.rtc.read(register, tick)?;
+                } else if self.rtc_registers.owns(register) {
+                    self.response = self.rtc_registers.read(&self.rtc, register, tick)?;
                 } else if Self::writable(register) {
                     self.response = *self
                         .registers
@@ -183,8 +133,9 @@ impl Input for PowerSerial {
                 if self.header & 1 != 0 {
                     let register = self.header >> 2;
                     let value = u16::from(self.high) << 8 | u16::from(tx);
-                    if matches!(register, 32 | 34 | 35) {
-                        self.rtc.write(register, value, tick)?;
+                    if self.rtc_registers.owns(register) {
+                        self.rtc_registers
+                            .write(&mut self.rtc, register, value, tick)?;
                     } else {
                         if register == 38 && value & 0x8000 != 0 {
                             return Err("Power RTC alarm interrupt is not modeled".into());
@@ -219,7 +170,7 @@ impl Input for PowerSerial {
             high: u8,
             response: u16,
             edge: u64,
-            rtc: Rtc,
+            rtc: Counter,
         }
         let state: State = serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
         let registers: BTreeMap<_, _> = state
@@ -238,7 +189,7 @@ impl Input for PowerSerial {
             || registers.len() != state.registers.len()
             || registers
                 .keys()
-                .any(|(_, r)| !Self::writable(*r) || [32, 34, 35].contains(r))
+                .any(|(_, r)| !Self::writable(*r) || self.rtc_registers.owns(*r))
         {
             return Err("Invalid power SPI checkpoint or physical input".into());
         }
@@ -258,6 +209,14 @@ mod tests {
     use super::*;
     use crate::xp4::gpio::{BASE, Gpio, Pins};
     use crate::{Cx, Device, Host, Record};
+    fn rtc_map() -> DirectRegisters {
+        DirectRegisters {
+            control: 32,
+            low: 34,
+            high: 35,
+            running_value: 0x8000,
+        }
+    }
     struct Clock;
     impl Host for Clock {
         fn now(&self) -> u64 {
@@ -282,34 +241,44 @@ mod tests {
     }
     #[test]
     fn rtc_counter_stop_load_start_wrap_and_observation() {
-        let mut rtc = Rtc {
+        let map = rtc_map();
+        let mut rtc = Counter {
             seconds: 0,
             anchor: 0,
             running: false,
             ticks_per_second: 10,
         };
-        rtc.write(34, 0xfffe, 4).unwrap();
-        rtc.write(35, 0xffff, 5).unwrap();
-        rtc.write(32, 0x8000, 6).unwrap();
-        assert_eq!(rtc.read(34, 15).unwrap(), 0xfffe);
-        assert_eq!(rtc.read(34, 16).unwrap(), 0xffff);
+        map.write(&mut rtc, 34, 0xfffe, 4).unwrap();
+        map.write(&mut rtc, 35, 0xffff, 5).unwrap();
+        map.write(&mut rtc, 32, 0x8000, 6).unwrap();
+        assert_eq!(map.read(&rtc, 34, 15).unwrap(), 0xfffe);
+        assert_eq!(map.read(&rtc, 34, 16).unwrap(), 0xffff);
         assert_eq!(rtc.counter(26).unwrap(), 0);
         let saved = serde_json::to_value(&rtc).unwrap();
         for _ in 0..10 {
             assert_eq!(rtc.counter(36).unwrap(), 1);
         }
         assert_eq!(serde_json::to_value(&rtc).unwrap(), saved);
-        assert!(rtc.write(34, 12, 36).is_err());
-        assert!(rtc.write(32, 1, 36).is_err());
-        rtc.write(32, 0, 36).unwrap();
+        assert!(map.write(&mut rtc, 34, 12, 36).is_err());
+        assert!(map.write(&mut rtc, 32, 1, 36).is_err());
+        map.write(&mut rtc, 32, 0, 36).unwrap();
         assert_eq!(rtc.counter(100).unwrap(), 1);
     }
     #[test]
     fn checkpoint_preserves_partial_frame_running_rtc_and_gpio_connection() {
         let pins = Pins::new([0; 16]);
         let inputs = [(0, 0), (1, 0), (2, 0), (3, 512), (32, 0), (34, 0), (35, 0)].into();
-        let mut source =
-            PowerSerial::new(pins.clone(), 12, 5, true, false, inputs, 54_000_000).unwrap();
+        let mut source = PowerSerial::new(
+            pins.clone(),
+            12,
+            5,
+            true,
+            false,
+            inputs,
+            54_000_000,
+            rtc_map(),
+        )
+        .unwrap();
         let mut resumed = PowerSerial::new(
             pins.clone(),
             12,
@@ -318,6 +287,7 @@ mod tests {
             false,
             source.inputs.clone(),
             54_000_000,
+            rtc_map(),
         )
         .unwrap();
         let mut gpio = Gpio::new(pins);
@@ -327,7 +297,16 @@ mod tests {
             4,
             (1 << 21) | (1 << 5),
         );
-        source.rtc.write(32, 0x8000, 7).unwrap();
+        source
+            .rtc_registers
+            .write(&mut source.rtc, 32, 0x8000, 7)
+            .unwrap();
+        assert_eq!(
+            source.save()["rtc"],
+            json!({
+                "seconds":0,"anchor":7,"running":true,"ticks_per_second":54_000_000
+            })
+        );
         source.exchange(8, 18 * 4 + 1, 8).unwrap();
         source.exchange(8, 0x12, 9).unwrap();
         resumed.restore(&source.save()).unwrap();
@@ -359,6 +338,7 @@ mod tests {
             false,
             [(0, 0), (1, 0), (2, 0), (3, 512), (32, 0), (34, 0), (35, 0)].into(),
             54_000_000,
+            rtc_map(),
         )
         .unwrap();
         assert_eq!(peer.exchange(8, 12, 0).unwrap(), 0); // Unselected wire is low.

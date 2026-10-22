@@ -956,15 +956,15 @@ impl Session {
                 .get_or_insert_with(devices::Devices::empty)
                 .temperature(value, ticks)?;
         }
-        if let Some((base, idle, port, pin, high, inputs, rtc_ticks)) = power_spi {
+        if let Some((base, idle, port, pin, high, inputs, rtc_ticks, rtc_registers)) = power_spi {
             devices
                 .get_or_insert_with(devices::Devices::empty)
-                .power_spi(base, idle, port, pin, high, inputs, rtc_ticks)?;
+                .power_spi(base, idle, port, pin, high, inputs, rtc_ticks, rtc_registers)?;
         }
-        if let Some((base, idle, port, pin, high, inputs, disable_writes)) = checksum_power_spi {
+        if let Some((base, idle, port, pin, high, inputs, disable_writes, rtc)) = checksum_power_spi {
             devices
                 .get_or_insert_with(devices::Devices::empty)
-                .checksum_power_spi(base, idle, port, pin, high, inputs, disable_writes)?;
+                .checksum_power_spi(base, idle, port, pin, high, inputs, disable_writes, rtc)?;
         }
         for (base, miso) in spi_inputs {
             devices

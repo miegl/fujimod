@@ -220,6 +220,7 @@ impl Devices {
         active_high: bool,
         inputs: BTreeMap<u8, u16>,
         rtc_ticks: u64,
+        rtc_registers: fujimod_emulator_devices::xp4::rtc::DirectRegisters,
     ) -> Result<(), String> {
         let pins = self
             .pins
@@ -234,6 +235,7 @@ impl Devices {
             idle,
             inputs,
             rtc_ticks,
+            rtc_registers,
         )?;
         self.spi_input(base, Box::new(part))
     }
@@ -247,6 +249,7 @@ impl Devices {
         active_high: bool,
         inputs: BTreeMap<u8, u16>,
         disable_writes: Vec<(u8, u16)>,
+        rtc: Option<fujimod_emulator_devices::xp4::rtc::StagedConfig>,
     ) -> Result<(), String> {
         let pins = self
             .pins
@@ -261,6 +264,7 @@ impl Devices {
             idle,
             inputs,
             disable_writes,
+            rtc,
         )?;
         self.spi_input(base, Box::new(part))
     }

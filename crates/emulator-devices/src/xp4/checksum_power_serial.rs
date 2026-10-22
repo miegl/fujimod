@@ -1,6 +1,10 @@
 //! Four-byte power-peer frames: seven-bit register, write flag, data and checksum.
-//! Reads and inert disable writes are declared inputs; enable effects refuse.
-use super::{gpio::SharedPins, spi::Input};
+//! Fixed inputs, inert disables and a staged RTC law are explicitly declared.
+use super::{
+    gpio::SharedPins,
+    rtc::{StagedClock, StagedConfig},
+    spi::Input,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -15,6 +19,7 @@ struct State {
     idle: bool,
     inputs: BTreeMap<u8, u16>,
     disable_writes: BTreeSet<(u8, u16)>,
+    rtc: Option<StagedClock>,
     edge: u64,
     phase: u8,
     frame: [u8; 4],
@@ -35,6 +40,7 @@ impl ChecksumPowerSerial {
         idle: bool,
         inputs: BTreeMap<u8, u16>,
         disable_writes: Vec<(u8, u16)>,
+        rtc: Option<StagedConfig>,
     ) -> Result<Self, String> {
         if port >= 16 || pin >= 16 || inputs.keys().any(|r| *r > 127) {
             return Err(
@@ -49,6 +55,12 @@ impl ChecksumPowerSerial {
         {
             return Err("Checksum power SPI disable admissions require unique seven-bit registers and zero values".into());
         }
+        if rtc.as_ref().is_some_and(|r| {
+            inputs.keys().any(|k| r.owns(*k)) || disables.iter().any(|(k, _)| r.owns(*k))
+        }) {
+            return Err("Staged RTC overlaps fixed inputs or disable admissions".into());
+        }
+        let rtc = rtc.map(StagedClock::new).transpose()?;
         Ok(Self {
             pins,
             state: State {
@@ -59,6 +71,7 @@ impl ChecksumPowerSerial {
                 idle,
                 inputs,
                 disable_writes: disables,
+                rtc,
                 edge: 0,
                 phase: 0,
                 frame: [0; 4],
@@ -69,7 +82,7 @@ impl ChecksumPowerSerial {
 }
 
 impl Input for ChecksumPowerSerial {
-    fn exchange(&mut self, bits: u32, tx: u16, _: u64) -> Result<u16, String> {
+    fn exchange(&mut self, bits: u32, tx: u16, tick: u64) -> Result<u16, String> {
         let s = &mut self.state;
         let (level, edge) = self.pins.lock().unwrap().output(s.port, s.pin);
         if edge != s.edge {
@@ -88,9 +101,13 @@ impl Input for ChecksumPowerSerial {
         let reply = match s.phase {
             0 => {
                 s.response = if header & 128 == 0 {
-                    *s.inputs.get(&register).ok_or_else(|| {
-                        format!("Unsupported checksum power SPI read register{register}")
-                    })?
+                    if let Some(rtc) = s.rtc.as_ref().filter(|r| r.config.owns(register)) {
+                        rtc.read(register, tick)?
+                    } else {
+                        *s.inputs.get(&register).ok_or_else(|| {
+                            format!("Unsupported checksum power SPI read register{register}")
+                        })?
+                    }
                 } else {
                     0
                 };
@@ -108,7 +125,10 @@ impl Input for ChecksumPowerSerial {
                 }
                 if header & 128 != 0 {
                     let value = u16::from_be_bytes([s.frame[1], s.frame[2]]);
-                    if s.disable_writes.contains(&(register, value)) {
+                    if let Some(rtc) = s.rtc.as_mut().filter(|r| r.config.owns(register)) {
+                        rtc.write(register, value, tick)?;
+                        u16::from(s.frame[3])
+                    } else if s.disable_writes.contains(&(register, value)) {
                         // No countdown/alarm is implemented or armed. A declared
                         // disable leaves it inert; this does not admit readback
                         // or any enabling/status transition.
@@ -153,6 +173,11 @@ impl Input for ChecksumPowerSerial {
         {
             return Err("Invalid checksum power SPI checkpoint or physical input".into());
         }
+        match (&state.rtc, &s.rtc) {
+            (Some(saved), Some(current)) => saved.validate_restore(current)?,
+            (None, None) => {}
+            _ => return Err("Staged RTC selection differs from checkpoint".into()),
+        }
         self.state = state;
         Ok(())
     }
@@ -196,6 +221,7 @@ mod tests {
             false,
             [(0, 0), (18, 0x1234), (65, 0xabcd)].into(),
             vec![],
+            None,
         )
         .unwrap();
         let mut gpio = Gpio::new(pins);
@@ -281,9 +307,17 @@ mod tests {
     fn declared_disable_acknowledges_only_zero_without_admitting_readback_or_enable() {
         let pins = Pins::new([0; 16]);
         let mut gpio = Gpio::new(pins.clone());
-        let mut peer =
-            ChecksumPowerSerial::new(pins, 12, 5, true, false, [(0, 0)].into(), vec![(65, 0)])
-                .unwrap();
+        let mut peer = ChecksumPowerSerial::new(
+            pins,
+            12,
+            5,
+            true,
+            false,
+            [(0, 0)].into(),
+            vec![(65, 0)],
+            None,
+        )
+        .unwrap();
         select(&mut gpio, true);
         assert_eq!(
             frame(&mut peer, [0xc1, 0, 0, 0x3e]).unwrap(),
@@ -328,7 +362,8 @@ mod tests {
                     true,
                     false,
                     [(0, 0)].into(),
-                    invalid
+                    invalid,
+                    None,
                 )
                 .is_err()
             );

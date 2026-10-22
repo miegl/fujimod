@@ -42,7 +42,13 @@
         "rtc_ticks_per_second": 54000000,
         "rtc_basis": "Explicit unset RTC: control32=0 (stopped), low/high seconds34/35=0. 10a3398 stops32, loads34/35, then starts32 with0x8000;10a3344 reads a stable low/high pair. After a guest start the counter advances from guest ticks at the declared54MHz timebase. Counter writes while running and unsupported alarm interrupts refuse; no software date globals are supplied.",
         "ambient_celsius": 25,
-        "basis": "Declared catalog input."
+        "basis": "Declared catalog input.",
+        "rtc_registers": {
+          "control": 32,
+          "low": 34,
+          "high": 35,
+          "running_value": 32768
+        }
       }
     },
     "4": {

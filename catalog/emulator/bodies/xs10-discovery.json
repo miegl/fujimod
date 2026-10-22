@@ -41,7 +41,19 @@
             "value": 0
           }
         ],
-        "basis": "Four-byte checksum transport; synthetic register 0 = 0 and status register 16 = 0 (optional calibration flag clear). The declared countdown disable write is inert while no alarm is modeled; enable writes and undeclared reads/writes refuse."
+        "basis": "Four-byte checksum transport; synthetic status inputs and unset RTC (no valid/control/commit bits asserted). Exact staged clock load and declared inert countdown disable are admitted; alarm enables, retained state, other control operations and post-commit control readback refuse.",
+        "rtc": {
+          "control": 36,
+          "read_low": 34,
+          "read_high": 35,
+          "stage_low": 29,
+          "stage_high": 30,
+          "commit_value": 514,
+          "valid_mask": 2,
+          "initial_control": 0,
+          "initial_seconds": 0,
+          "ticks_per_second": 54000000
+        }
       }
     },
     "4": {

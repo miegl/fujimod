@@ -49,7 +49,16 @@ pub struct Definition {
     #[serde(default)]
     pub temperature: Option<(i32, u64)>,
     #[serde(default)]
-    pub power_spi: Option<(u64, bool, usize, usize, bool, BTreeMap<u8, u16>, u64)>,
+    pub power_spi: Option<(
+        u64,
+        bool,
+        usize,
+        usize,
+        bool,
+        BTreeMap<u8, u16>,
+        u64,
+        fujimod_emulator_devices::xp4::rtc::DirectRegisters,
+    )>,
     #[serde(default)]
     pub checksum_power_spi: Option<(
         u64,
@@ -59,6 +68,7 @@ pub struct Definition {
         bool,
         BTreeMap<u8, u16>,
         Vec<(u8, u16)>,
+        Option<fujimod_emulator_devices::xp4::rtc::StagedConfig>,
     )>,
     #[serde(default)]
     pub imaging: Option<(
