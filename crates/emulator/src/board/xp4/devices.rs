@@ -238,6 +238,31 @@ impl Devices {
         self.spi_input(base, Box::new(part))
     }
 
+    pub fn checksum_power_spi(
+        &mut self,
+        base: u64,
+        idle: bool,
+        port: usize,
+        pin: usize,
+        active_high: bool,
+        inputs: BTreeMap<u8, u16>,
+    ) -> Result<(), String> {
+        let pins = self
+            .pins
+            .as_ref()
+            .ok_or("Checksum power SPI requires physical GPIO wiring")?
+            .clone();
+        let part = fujimod_emulator_devices::xp4::checksum_power_serial::ChecksumPowerSerial::new(
+            pins,
+            port,
+            pin,
+            active_high,
+            idle,
+            inputs,
+        )?;
+        self.spi_input(base, Box::new(part))
+    }
+
     pub fn adc(&mut self, inputs: [u16; 12], sample_ticks: u64) -> Result<(), String> {
         let base = fujimod_emulator_devices::xp4::adc::BASE;
         if self

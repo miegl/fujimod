@@ -51,6 +51,8 @@ pub struct Definition {
     #[serde(default)]
     pub power_spi: Option<(u64, bool, usize, usize, bool, BTreeMap<u8, u16>, u64)>,
     #[serde(default)]
+    pub checksum_power_spi: Option<(u64, bool, usize, usize, bool, BTreeMap<u8, u16>)>,
+    #[serde(default)]
     pub imaging: Option<(
         (u64, u64, Vec<u32>, Vec<u32>, Vec<u32>),
         (u64, u64, u64, u64),

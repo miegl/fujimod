@@ -834,6 +834,7 @@ impl Session {
             gpio,
             temperature,
             power_spi,
+            checksum_power_spi,
             imaging,
             movdc,
             sd_clocks,
@@ -959,6 +960,11 @@ impl Session {
             devices
                 .get_or_insert_with(devices::Devices::empty)
                 .power_spi(base, idle, port, pin, high, inputs, rtc_ticks)?;
+        }
+        if let Some((base, idle, port, pin, high, inputs)) = checksum_power_spi {
+            devices
+                .get_or_insert_with(devices::Devices::empty)
+                .checksum_power_spi(base, idle, port, pin, high, inputs)?;
         }
         for (base, miso) in spi_inputs {
             devices

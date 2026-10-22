@@ -25,7 +25,7 @@
     "1": {
       "level": "low",
       "basis": "Declared catalog input.",
-      "power_registers": {
+      "power_checksum_registers": {
         "chip_select": {
           "port": 12,
           "pin": 5,
@@ -33,21 +33,9 @@
         },
         "inputs": {
           "0": 0,
-          "1": 0,
-          "2": 0,
-          "3": 512,
-          "16": 0,
-          "32": 0,
-          "34": 0,
-          "35": 0,
-          "4": 0,
-          "5": 0,
-          "6": 0
+          "16": 0
         },
-        "rtc_ticks_per_second": 54000000,
-        "rtc_basis": "Synthetic stopped RTC, initialized to zero. The counter advances at the declared timebase after guest start; unsupported alarm interrupts refuse.",
-        "ambient_celsius": 25,
-        "basis": "Declared catalog input."
+        "basis": "Four-byte checksum transport; synthetic register 0 = 0 and status register 16 = 0 (optional calibration flag clear). All other reads and all writes refuse."
       }
     },
     "4": {

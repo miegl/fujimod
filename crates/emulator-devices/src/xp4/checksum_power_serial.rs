@@ -1,0 +1,254 @@
+//! Four-byte power-peer frames: seven-bit register, write flag, data and checksum.
+//! Only explicitly supplied read inputs are modeled; writes have no inferred effects.
+use super::{gpio::SharedPins, spi::Input};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::BTreeMap;
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct State {
+    kind: String,
+    port: usize,
+    pin: usize,
+    active_high: bool,
+    idle: bool,
+    inputs: BTreeMap<u8, u16>,
+    edge: u64,
+    phase: u8,
+    frame: [u8; 4],
+    response: u16,
+}
+
+pub struct ChecksumPowerSerial {
+    pins: SharedPins,
+    state: State,
+}
+
+impl ChecksumPowerSerial {
+    pub fn new(
+        pins: SharedPins,
+        port: usize,
+        pin: usize,
+        active_high: bool,
+        idle: bool,
+        inputs: BTreeMap<u8, u16>,
+    ) -> Result<Self, String> {
+        if port >= 16 || pin >= 16 || inputs.keys().any(|r| *r > 127) {
+            return Err(
+                "Checksum power SPI needs bounded registers and physical GPIO wiring".into(),
+            );
+        }
+        Ok(Self {
+            pins,
+            state: State {
+                kind: "checksum-power-registers".into(),
+                port,
+                pin,
+                active_high,
+                idle,
+                inputs,
+                edge: 0,
+                phase: 0,
+                frame: [0; 4],
+                response: 0,
+            },
+        })
+    }
+}
+
+impl Input for ChecksumPowerSerial {
+    fn exchange(&mut self, bits: u32, tx: u16, _: u64) -> Result<u16, String> {
+        let s = &mut self.state;
+        let (level, edge) = self.pins.lock().unwrap().output(s.port, s.pin);
+        if edge != s.edge {
+            s.phase = 0;
+            s.edge = edge;
+        }
+        if level != s.active_high {
+            return Ok(if s.idle { u16::MAX >> (16 - bits) } else { 0 });
+        }
+        if bits != 8 {
+            return Err("Checksum power SPI requires eight-bit serial words".into());
+        }
+        s.frame[usize::from(s.phase)] = tx as u8;
+        let header = s.frame[0];
+        let register = header & 127;
+        let reply = match s.phase {
+            0 => {
+                s.response = if header & 128 == 0 {
+                    *s.inputs.get(&register).ok_or_else(|| {
+                        format!("Unsupported checksum power SPI read register{register}")
+                    })?
+                } else {
+                    0
+                };
+                0
+            }
+            1 => s.response >> 8,
+            2 => s.response & 255,
+            _ => {
+                if s.frame
+                    .iter()
+                    .fold(0u8, |sum, byte| sum.wrapping_add(*byte))
+                    != 255
+                {
+                    return Err("Invalid checksum power SPI request checksum".into());
+                }
+                if header & 128 != 0 {
+                    let value = u16::from_be_bytes([s.frame[1], s.frame[2]]);
+                    return Err(format!(
+                        "Unsupported checksum power SPI write register{register} value0x{value:04x}"
+                    ));
+                }
+                u16::from(
+                    !register
+                        .wrapping_add((s.response >> 8) as u8)
+                        .wrapping_add(s.response as u8),
+                )
+            }
+        };
+        s.phase = (s.phase + 1) % 4;
+        Ok(reply)
+    }
+
+    fn save(&self) -> Value {
+        serde_json::to_value(&self.state).unwrap()
+    }
+
+    fn restore(&mut self, value: &Value) -> Result<(), String> {
+        let state: State = serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+        let s = &self.state;
+        if state.kind != s.kind
+            || state.port != s.port
+            || state.pin != s.pin
+            || state.active_high != s.active_high
+            || state.idle != s.idle
+            || state.inputs != s.inputs
+            || state.phase > 3
+        {
+            return Err("Invalid checksum power SPI checkpoint or physical input".into());
+        }
+        self.state = state;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::xp4::gpio::{BASE, Gpio, Pins};
+    use crate::{Cx, Device, Host, Record};
+
+    struct Clock;
+    impl Host for Clock {
+        fn now(&self) -> u64 {
+            0
+        }
+        fn schedule(&mut self, _: usize, _: u64, _: u64) {
+            unreachable!()
+        }
+        fn set_irq(&mut self, _: u32, _: bool) {
+            unreachable!()
+        }
+        fn raise_irq(&mut self, _: usize, _: u32) -> Result<(), String> {
+            unreachable!()
+        }
+        fn ram_read(&self, _: u64, _: &mut [u8]) -> Result<(), String> {
+            unreachable!()
+        }
+        fn ram_write(&mut self, _: u64, _: &[u8]) -> Result<(), String> {
+            unreachable!()
+        }
+        fn record(&mut self, _: Record) {}
+    }
+    fn selected() -> (ChecksumPowerSerial, Gpio) {
+        let pins = Pins::new([0; 16]);
+        let peer = ChecksumPowerSerial::new(
+            pins.clone(),
+            12,
+            5,
+            true,
+            false,
+            [(0, 0), (18, 0x1234), (65, 0xabcd)].into(),
+        )
+        .unwrap();
+        let mut gpio = Gpio::new(pins);
+        select(&mut gpio, true);
+        (peer, gpio)
+    }
+    fn select(gpio: &mut Gpio, high: bool) {
+        gpio.write(
+            &mut Cx::new(&mut Clock, 0, 0, 0),
+            BASE + 12 * 64,
+            4,
+            (1 << 21) | if high { 1 << 5 } else { 0 },
+        );
+    }
+    fn frame(peer: &mut ChecksumPowerSerial, bytes: [u16; 4]) -> Result<Vec<u16>, String> {
+        bytes.into_iter().map(|b| peer.exchange(8, b, 0)).collect()
+    }
+
+    #[test]
+    fn checksum_is_the_fourth_byte_and_register_address_is_seven_bits() {
+        let (mut peer, _) = selected();
+        assert_eq!(frame(&mut peer, [0, 0, 0, 255]).unwrap(), [0, 0, 0, 255]);
+        assert_eq!(
+            frame(&mut peer, [18, 0, 0, 237]).unwrap(),
+            [0, 0x12, 0x34, 0xa7]
+        );
+        assert_eq!(
+            frame(&mut peer, [65, 0, 0, 190]).unwrap(),
+            [0, 0xab, 0xcd, 0x46]
+        );
+        assert!(
+            peer.exchange(8, 127, 0)
+                .unwrap_err()
+                .contains("read register127")
+        );
+    }
+
+    #[test]
+    fn partial_frames_resume_and_chip_select_aborts_them() {
+        let (mut peer, mut gpio) = selected();
+        peer.exchange(8, 18, 0).unwrap();
+        let saved = peer.save();
+        peer.exchange(8, 0, 0).unwrap();
+        peer.restore(&saved).unwrap();
+        assert_eq!(peer.exchange(8, 0, 0).unwrap(), 0x12);
+        assert_eq!(peer.exchange(8, 0, 0).unwrap(), 0x34);
+        assert_eq!(peer.exchange(8, 237, 0).unwrap(), 0xa7);
+        peer.exchange(8, 18, 0).unwrap();
+        select(&mut gpio, false);
+        assert_eq!(peer.exchange(8, 255, 0).unwrap(), 0);
+        select(&mut gpio, true);
+        assert_eq!(frame(&mut peer, [0, 0, 0, 255]).unwrap(), [0, 0, 0, 255]);
+        let saved = peer.save();
+        assert_eq!(peer.save(), saved);
+        let mut wrong = saved.clone();
+        wrong["inputs"]["0"] = 1.into();
+        assert!(peer.restore(&wrong).is_err());
+    }
+
+    #[test]
+    fn bad_checksum_and_unsupported_write_have_no_register_effect() {
+        let (mut peer, mut gpio) = selected();
+        assert!(
+            frame(&mut peer, [0, 0, 0, 0])
+                .unwrap_err()
+                .contains("checksum")
+        );
+        select(&mut gpio, false);
+        select(&mut gpio, true);
+        assert_eq!(
+            frame(&mut peer, [0x92, 0x12, 0x34, 0x27]).unwrap_err(),
+            "Unsupported checksum power SPI write register18 value0x1234"
+        );
+        select(&mut gpio, false);
+        select(&mut gpio, true);
+        assert_eq!(
+            frame(&mut peer, [18, 0, 0, 237]).unwrap(),
+            [0, 0x12, 0x34, 0xa7]
+        );
+    }
+}
