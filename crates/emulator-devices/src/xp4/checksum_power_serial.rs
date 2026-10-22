@@ -22,6 +22,7 @@ struct State {
     rtc: Option<StagedClock>,
     retained_registers: BTreeSet<u8>,
     stored: BTreeMap<u8, u16>,
+    retained_written: BTreeSet<u8>,
     edge: u64,
     phase: u8,
     frame: [u8; 4],
@@ -90,6 +91,7 @@ impl ChecksumPowerSerial {
                 rtc,
                 retained_registers: retained,
                 stored: BTreeMap::new(),
+                retained_written: BTreeSet::new(),
                 edge: 0,
                 phase: 0,
                 frame: [0; 4],
@@ -149,12 +151,23 @@ impl Input for ChecksumPowerSerial {
                 if header & 128 != 0 {
                     let value = u16::from_be_bytes([s.frame[1], s.frame[2]]);
                     if let Some(rtc) = s.rtc.as_mut().filter(|r| r.config.owns(register)) {
-                        rtc.write(register, value, tick)?;
+                        if register == rtc.config.control && value == rtc.retained_control_value() {
+                            if s.retained_registers.is_empty()
+                                || s.retained_written != s.retained_registers
+                            {
+                                return Err("Retained control commit requires fresh writes to every declared word".into());
+                            }
+                            rtc.commit_retained(value, tick)?;
+                            s.retained_written.clear();
+                        } else {
+                            rtc.write(register, value, tick)?;
+                        }
                         u16::from(s.frame[3])
                     } else if s.retained_registers.contains(&register) {
                         // Register storage only; this supplies no commit,
                         // reset retention or power-domain transition.
                         s.stored.insert(register, value);
+                        s.retained_written.insert(register);
                         u16::from(s.frame[3])
                     } else if s.disable_writes.contains(&(register, value)) {
                         // No countdown/alarm is implemented or armed. A declared
@@ -202,6 +215,10 @@ impl Input for ChecksumPowerSerial {
                 .stored
                 .keys()
                 .any(|r| !s.retained_registers.contains(r))
+            || state
+                .retained_written
+                .iter()
+                .any(|r| !s.retained_registers.contains(r) || !state.stored.contains_key(r))
             || state.phase > 3
         {
             return Err("Invalid checksum power SPI checkpoint or physical input".into());
@@ -370,6 +387,7 @@ mod tests {
                 .contains("checksum")
         );
         assert_eq!(peer.save()["stored"], serde_json::json!({}));
+        assert_eq!(peer.save()["retained_written"], serde_json::json!([]));
         select(&mut gpio, false);
         select(&mut gpio, true);
         let write = packet(0xc2, 0xabcd);
@@ -380,8 +398,10 @@ mod tests {
         assert_eq!(peer.exchange(8, write[3], 0).unwrap(), write[3]);
         let complete = peer.save();
         assert_eq!(complete["stored"], serde_json::json!({"66":0xabcd}));
+        assert_eq!(complete["retained_written"], serde_json::json!([66]));
         peer.restore(&partial).unwrap();
         assert_eq!(peer.save()["stored"], serde_json::json!({}));
+        assert_eq!(peer.save()["retained_written"], serde_json::json!([]));
         peer.exchange(8, write[2], 0).unwrap();
         peer.exchange(8, write[3], 0).unwrap();
         assert_eq!(peer.save(), complete);
@@ -395,6 +415,12 @@ mod tests {
         assert!(peer.restore(&invalid).is_err());
         invalid = saved.clone();
         invalid["retained_registers"] = serde_json::json!([65]);
+        assert!(peer.restore(&invalid).is_err());
+        invalid = saved.clone();
+        invalid["retained_written"] = serde_json::json!([67]);
+        assert!(peer.restore(&invalid).is_err());
+        invalid = saved.clone();
+        invalid["retained_written"] = serde_json::json!([65]);
         assert!(peer.restore(&invalid).is_err());
         assert_eq!(peer.save(), saved);
         assert!(
@@ -434,6 +460,12 @@ mod tests {
             stage_high: 104,
             commit_value: 0x202,
             valid_mask: 2,
+            retained_valid_mask: 1,
+            strobe: super::super::rtc::StrobeWindow {
+                mask: 0x200,
+                set_through_ticks: 2,
+                clear_from_ticks: 5,
+            },
             initial_control: 0,
             initial_seconds: 0,
             ticks_per_second: 10,

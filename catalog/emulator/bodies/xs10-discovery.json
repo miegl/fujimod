@@ -41,7 +41,7 @@
             "value": 0
           }
         ],
-        "basis": "Four-byte checksum transport; synthetic status inputs and unset RTC. Exact staged clock load, declared inert countdown disable and stored register values are admitted. Retained words initially read zero unless explicitly supplied; no persistence or commit effect is implied. Alarm enables, other control operations and post-commit control readback refuse.",
+        "basis": "Four-byte checksum transport; synthetic status inputs and unset RTC. Stored words initially read zero. Clock loads preserve retained validity. Control reads retain the load strobe through the declared set window, refuse the unresolved interval, then clear it. After fresh writes to every retained word, the declared validity update latches without a clock reload or persistence effect. Independent control operations and alarm enables refuse.",
         "retained_registers": [42, 43, 44, 45],
         "rtc": {
           "control": 36,
@@ -51,6 +51,12 @@
           "stage_high": 30,
           "commit_value": 514,
           "valid_mask": 2,
+          "retained_valid_mask": 1,
+          "strobe": {
+            "mask": 512,
+            "set_through_ticks": 9720,
+            "clear_from_ticks": 5940000
+          },
           "initial_control": 0,
           "initial_seconds": 0,
           "ticks_per_second": 54000000
